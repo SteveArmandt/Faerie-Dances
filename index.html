@@ -257,7 +257,7 @@ canvas{display:block;}
 #dockbtns .btn{padding: 6px 10px; font-size: 11.5px;}
  
 /* ---------- log (small, draggable, minimizable) ---------- */
-#log{position:fixed; z-index:12; width:155px; max-height:calc(var(--vh) * 36); display:none; flex-direction:column; padding:7px 8px;}
+#log{display:none !important;}   /* the journal is retired: a silent buffer only */
 #log .loghead{display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; padding-bottom:2px; padding-right:46px; border-bottom:1px solid rgba(216,180,90,.15); cursor:move;}
 #log h3{font-family:var(--disp); font-size:10px; letter-spacing:.16em; color:var(--ink2); pointer-events:none;}
 #logmin{background:none; border:none; cursor:pointer; font-family:var(--disp); font-weight:900; font-size:13px; color:var(--ink2); padding:0 4px; line-height:1;}
@@ -701,7 +701,7 @@ canvas{display:block;}
   <canvas id="menumist"></canvas>
   <svg id="gladebg" aria-hidden="true"></svg>
   <canvas id="menufireflies"></canvas>
-<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 128</div>
+<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 130</div>
   <div class="panel">
     <canvas class="cornerflourish" id="cornerfL" width="460" height="460"></canvas>
     <canvas class="cornerflourish flipped" id="cornerfR" width="460" height="460"></canvas>
@@ -905,7 +905,6 @@ canvas{display:block;}
     <button class="btn" id="gm-rulebook">Rulebook</button>
     <button class="btn" id="gm-magik">Faerie Magik</button>
     <button class="btn" id="gm-favors">Dance Favors</button>
-    <button class="btn" id="gm-telling">The Telling</button>
     <button class="btn" id="gm-zoom">Zoom</button>
     <button class="btn danger" id="gm-quit">Quit Game</button>
     <button class="btn" id="gm-pause">Pause</button>
@@ -930,7 +929,6 @@ canvas{display:block;}
     <button class="btn" id="gmzout">Zoom Out</button>
   </div>
 </div>
-<button class="btn" id="logtoggle">The Telling<span id="logticker"></span></button>
 <button class="btn" id="docktoggle" style="display:none">Your Hand</button>
 <div id="log" class="panel">
   <div class="loghead"><h3>THE TELLING</h3><button id="logmin" title="Minimize">–</button></div>
@@ -1234,8 +1232,8 @@ function log(msg, cls){
   const p=document.createElement('p'); if(cls)p.className=cls; p.innerHTML=msg;
   $('#logbody').appendChild(p); $('#logbody').scrollTop=1e9;
   // Minimized turn updates: the latest line rides on the Telling's toggle pill.
-  const lt=$('#logticker');
-  if(lt) lt.textContent=String(msg).replace(/<[^>]*>/g,'').slice(0,80);
+  const lb=$('#logbody');
+  while(lb.children.length>200) lb.removeChild(lb.firstChild);   // bounded: nothing reads it
 }
 function banner(t){
   const b=$('#banner'); b.textContent=t; b.style.opacity=1;
@@ -2952,7 +2950,7 @@ const mySeatP=()=>G.players[MY_SEAT];
    payload is serialized, answered by the guest-side handler, the reply is
    serialized back, and the host-side validators run on it — with no network
    involved. Anything non-serializable, index-broken, or validator-rejected
-   surfaces as a red line in The Telling instead of a cross-machine mystery.
+   surfaces in the console instead of a cross-machine mystery.
    Turn on with ?wire=1 or #wire=1 in the URL, or setForceWire(true) in the
    console. Never active on a guest (its decisions already cross a real wire). */
 let FORCE_WIRE=false;
@@ -3232,7 +3230,7 @@ function renderHUD(){
   { const rivals=G.players.length-1;
     R.classList.toggle('crowded', rivals>=4); }
   G.players.filter(p=>p.i!==MY_SEAT).forEach(p=>{
-    const houseMini = `<div class="mini back hcard" title="Courts stay hidden: remember what you glimpse, or consult The Telling">C</div>`;
+    const houseMini = `<div class="mini back hcard" title="Courts stay hidden: remember what you glimpse">C</div>`;
     const d=document.createElement('div');
     const isTurn = G.players[G.turn]===p && !G.over;
     d.className='stand panel'+(isTurn?' active':'');
@@ -3267,7 +3265,7 @@ function renderHUD(){
   const ms=$('#mystatus');
   ms.className='bigcard back'; ms.textContent='?';
   ms.title = me.knownStatus!==null
-    ? 'Your Radiance faces away again; you glimpsed it once, so remember it.'
+    ? 'Your Radiance faces away again; you glimpsed it once, so hold it in memory.'
     : 'Your Radiance faces away from you. Rivals can see it; you cannot.';
   const hd=$('#hand'); hd.innerHTML='';
   for(let v=1; v<=6; v++){
@@ -3383,7 +3381,7 @@ function bringToFront(el){
    closed (their dock tabs remain), and any open panel closes the moment the
    player acts on the board. The turn dock is exempt: it IS the turn. */
 const MOBILE_UI = matchMedia('(max-width: 820px), (max-height: 560px)').matches;
-const REF_PANELS=[['log','logtoggle','flex'],['legend','legtoggle','block'],
+const REF_PANELS=[['legend','legtoggle','block'],
                   ['rulebook','rbtoggle','flex'],['chatpanel','chattoggle','flex'],
                   ['magikpanel','magiktoggle','flex']];
 function closeRefPanels(){
@@ -3470,7 +3468,6 @@ if(MOBILE_UI){
     'gm-rulebook': ['rulebook','rbtoggle','flex'],
     'gm-magik':    ['magikpanel','magiktoggle','flex'],
     'gm-favors':   ['legend','legtoggle','block'],
-    'gm-telling':  ['log','logtoggle','flex'],
   };
   function openMenu(v){
     wrap.classList.toggle('open', v);
@@ -3623,7 +3620,7 @@ if(MOBILE_UI){
   new ResizeObserver(fit).observe(document.body);
   addEventListener('resize',fit);
   window.GMENU_FIT=fit;
-  /* the ticker dot: something new in The Telling while the menu is closed */
+  /* the ticker dot: unread news while the menu is closed */
   window.GMENU_MARK=(on)=>{ const d=$('#gmenudot'); if(d) d.style.display=on?'block':'none'; };
   window.GMENU_OWNS=(pid)=>Object.values(PANELS).some(([p])=>p===pid) && $('#gmenu') && $('#gmenu').style.display!=='none';
 })();
@@ -3634,10 +3631,10 @@ $('#tutpeek').onclick=()=>collapseTutBubble(false);
 $('#movemin').onclick=()=>collapseMoveHud(true);
 $('#movepeek').onclick=()=>collapseMoveHud(false);
 addEventListener('orientationchange',()=>setTimeout(()=>{ if($('#movehud').style.display!=='none') dockMoveHud(); },320));
-$('#logmin').onclick=()=>setPanel('log','logtoggle',false,'flex');
+/* the journal has no toggle: nothing to wire */
 $('#dockmin').onclick=()=>setPanel('dock','docktoggle',false,'flex');
 $('#docktoggle').onclick=()=>setPanel('dock','docktoggle',true,'flex');
-$('#logtoggle').onclick=()=>setPanel('log','logtoggle',true,'flex');
+
 $('#legmin').onclick=()=>setPanel('legend','legtoggle',false,'block');
 $('#legtoggle').onclick=()=>setPanel('legend','legtoggle',true,'block');
 $('#rbmin').onclick=()=>setPanel('rulebook','rbtoggle',false,'flex');
@@ -4362,7 +4359,7 @@ const ACTIONS={
     log(`${fmtP(p)} gazes upon their own Radiance.`);
     logTo(p, `You gaze upon your Radiance: it is <b>${p.status}</b>.`, 'sys');
     if(p.isHuman){
-      await seatNotice(p, 'Your Radiance', `Your Radiance is <b>${p.status}</b>. The card turns away again; remember it, or consult The Telling.`);
+      await seatNotice(p, 'Your Radiance', `Your Radiance is <b>${p.status}</b>. The card turns away again: hold it in memory.`);
     }
     renderHUD();
   },
@@ -4427,7 +4424,7 @@ const ACTIONS={
     log(`${fmtP(p)} peeks at ${fmtP(t)}\u2019s Court card.`);
     logTo(p, `You peek: ${fmtP(t)} belongs to the ${fmtH(t.house)}.`, 'sys');
     if(p.isHuman){
-      await seatNotice(p, 'Allegiance glimpsed', `${t.name} belongs to the <b>${HOUSE_BY_ID[t.house].name}</b>. The card turns facedown again; remember it, or consult The Telling.`);
+      await seatNotice(p, 'Allegiance glimpsed', `${t.name} belongs to the <b>${HOUSE_BY_ID[t.house].name}</b>. The card turns facedown again: hold it in memory.`);
     }
     renderHUD();
   },
@@ -4639,7 +4636,7 @@ async function playActiveIntrigue(p, name){
     case 'Scrying Pool':
       p.knownStatus=p.status;
       logTo(p, `The scrying pool shows your Radiance: it is <b>${p.status}</b>.`, 'sys');
-      await seatNotice(p, 'Scrying Pool', `The still water shows it: your Radiance is <b>${p.status}</b>. Remember it, or consult The Telling.`);
+      await seatNotice(p, 'Scrying Pool', `The still water shows it: your Radiance is <b>${p.status}</b>. Hold it in memory: the water will not show it twice.`);
       break;
     case 'Whispered Lore': {
       const uniq=[...new Set(G.intrigueDiscard)];
@@ -5810,6 +5807,7 @@ async function aiTurn(p){
    Boot, Dragging and Controls
    ============================================================ */
 function makeDraggable(el, handleSelector) {
+  if(!el) return;                    // a retired panel: nothing to drag
   let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
   let isDragging = false;
   const handle = handleSelector ? (el.querySelector(handleSelector) || el) : el;
@@ -6106,7 +6104,6 @@ function finishBootUI(mode){
   $('#dockhead').addEventListener('pointerdown', ()=>freezeCenter(dockEl));
   makeDraggable(dockEl, '#dockhead');
   makeDraggable($('#docktoggle'));
-  makeDraggable($('#logtoggle'));
   makeDraggable($('#rbtoggle'));
   makeDraggable($('#legtoggle'));
   makeDraggable($('#magiktoggle'));
@@ -6521,7 +6518,7 @@ function seatReclaimFlip(p){
   log(`<b>${NET.names[p.i]||p.name}</b> takes their seat back from the Fae.`, 'sys');
 }
 async function seatCatchUp(p){
-  let caught='The Fae danced your seat while you were away; The Telling on this screen begins anew from here.';
+  let caught='The Fae danced your seat while you were away; you rejoin the dance from here.';
   if(p.knownStatus!=null) caught+=` The seat has glimpsed its own Radiance: it is <b>${p.knownStatus}</b>.`;
   const kh=Object.entries(p.knownHouses||{});
   if(kh.length) caught+=' Courts the seat has seen: '+kh.map(([i,h])=>`${G.players[+i].name} \u2014 ${HOUSE_BY_ID[h].name}`).join('; ')+'.';
@@ -8053,7 +8050,7 @@ function stepsWelcome(){
       body:`<i>The Fae learn to dance at the Masquerade.</i><br><br>This is the <b>Masquerade</b>: the intro dance. I\u2019ll show you the board, let you try things as we go, then walk you through a winning turn.` },
     { focusSel:['#gmenu'], eyebrow:'Your Guides', title:'The Menu',
       onShow:()=>{ const gm=$('#gmenu'); if(gm && gm.style.display!=='none') gm.classList.add('open'); },
-      body:`You never have to memorize anything: it is all behind the <b>Menu</b> in the top-right corner.<br><br>Tap it and five choices open to the left:<br><b>Rulebook</b> \u2014 the rules, with a turn summary at the top.<br><b>Faerie Magik</b> \u2014 every trick card in the deck.<br><b>Dance Favors</b> \u2014 what each of the four dances grants.<br><b>The Telling</b> \u2014 a running log of all that happens.<br><b>Zoom</b> \u2014 a slider to set your distance from the board.<br><br>On a computer, <b>hovering</b> a choice previews it; click <b>Pop Out</b> (or the choice itself) to keep it open. On a phone, tap a choice to open it, and tap the board to put it away. Every open panel drags by its header and tucks away with its minimize button.<br><br><b>The board stays live</b>: drag it to turn the view, even while I\u2019m talking.`,
+      body:`You never have to memorize anything: it is all behind the <b>Menu</b> in the top-right corner.<br><br>Tap it and four choices open to the left:<br><b>Rulebook</b> \u2014 the rules, with a turn summary at the top.<br><b>Faerie Magik</b> \u2014 every trick card in the deck.<br><b>Dance Favors</b> \u2014 what each of the four dances grants.<br><b>Zoom</b> \u2014 a slider to set your distance from the board.<br><br>On a computer, <b>hovering</b> a choice previews it; click <b>Pop Out</b> (or the choice itself) to keep it open. On a phone, tap a choice to open it, and tap the board to put it away. Every open panel drags by its header and tucks away with its minimize button.<br><br><b>The board stays live</b>: drag it to turn the view, even while I\u2019m talking.`,
       },
   ];
 }
