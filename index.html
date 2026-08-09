@@ -702,7 +702,7 @@ canvas{display:block;}
   <canvas id="menumist"></canvas>
   <svg id="gladebg" aria-hidden="true"></svg>
   <canvas id="menufireflies"></canvas>
-<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 144</div>
+<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 145</div>
   <div class="panel">
     <canvas class="cornerflourish" id="cornerfL" width="460" height="460"></canvas>
     <canvas class="cornerflourish flipped" id="cornerfR" width="460" height="460"></canvas>
@@ -2814,56 +2814,13 @@ function syncStands(){
   while(SG.children.length > n) SG.remove(SG.children[SG.children.length-1]);
   /* You sit nearest the camera (south, +z). Rivals fan across the far arc in
      seat order, so play still travels round the table in the right direction. */
-  const others=n;
-  /* Fan as wide as the view allows, then pull in until every easel is on
-     screen. A portrait phone sees a narrow cone, so the arc closes itself
-     rather than seating anyone out of sight. */
-  /* The table is always a full half-circle: the outermost Fae sit level with
-     the board's left and right midpoints, whatever the player count, and the
-     rest space themselves evenly along that sweep. Only a view too narrow to
-     hold it (a portrait phone) draws the arc in, and never below a half of it. */
-  /* Bucketed by the view's distance as well as the table size, so the arc
-     re-settles once when the game fits its camera to a new screen, but a
-     player turning or nudging the zoom never shuffles the seats. */
-  const _cp=SCENE.camera.position;
-  const _dist=Math.round(Math.hypot(_cp.x,_cp.z)/5);
-  const fanKey = n+'|'+Math.round(innerWidth)+'x'+Math.round(innerHeight)+'|'+_dist;
-  if(SG.userData.fanKey !== fanKey){
-    SG.userData.fanKey = fanKey;
-    const cam=SCENE.camera;
-    /* Judge the fit from the live camera's height and distance but from due
-       south, so the arc ignores whichever way the player has turned the view
-       while still respecting the zoom the game has fitted to this screen. */
-    const cp=cam.position, horiz=Math.hypot(cp.x, cp.z) || 21;
-    const az=Math.atan2(cp.x, cp.z);          // the view's current bearing
-    const fit=new THREE.PerspectiveCamera(cam.fov, cam.aspect, cam.near, cam.far);
-    fit.position.copy(cp); fit.quaternion.copy(cam.quaternion);
-    fit.updateMatrixWorld(); fit.updateProjectionMatrix();
-    const halfV=(cam.fov*Math.PI/180)/2;
-    const tanH=Math.tan(Math.atan(Math.tan(halfV)*cam.aspect));
-    let spreadDeg=180;
-    for(let guard=0; guard<40; guard++){        // enough steps to reach the floor
-      const s=spreadDeg*Math.PI/180;
-      let worst=0;
-      for(let k=0;k<n;k++){
-        const t = n===1 ? 0.5 : k/(n-1);
-        const a = -s/2 + s*t;
-        // test in the view's own bearing, so a turned camera doesn't skew the fit
-        const b=a+az;
-        const px=Math.sin(b)*STAND_R, pz=-Math.cos(b)*STAND_R;
-        const v=new THREE.Vector3(px, 2.3, pz).project(fit);
-        /* The card billboards, so it always shows its full width to the view:
-           add its on-screen half-width instead of offsetting along the tangent. */
-        const d=Math.hypot(px-cp.x, 2.3-cp.y, pz-cp.z);
-        const halfW=1.35/(d*tanH);
-        worst=Math.max(worst, Math.abs(v.x)+halfW);           // 1.0 = the screen edge
-      }
-      if(worst<=0.97 || spreadDeg<=40) break;
-      spreadDeg=Math.max(40, spreadDeg*0.93);
-    }
-    SG.userData.spread = spreadDeg*Math.PI/180;
-  }
-  const spread = SG.userData.spread;
+  /* The table is always a full half-circle, on every screen: the outermost Fae
+     sit level with the board's left and right midpoints, whatever the player
+     count and whatever the viewport. On a narrow phone the end seats fall off
+     the edges, which is by design: the player drags the board round to see
+     them, exactly as they would lean at a real table. */
+  const spread = Math.PI;
+  SG.userData.spread = spread;              // recorded for inspection
   seated.forEach((p,idx)=>{
     const st=SG.children[idx];
     const mine = false;
