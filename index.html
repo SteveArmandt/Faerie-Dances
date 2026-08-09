@@ -702,7 +702,7 @@ canvas{display:block;}
   <canvas id="menumist"></canvas>
   <svg id="gladebg" aria-hidden="true"></svg>
   <canvas id="menufireflies"></canvas>
-<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 142</div>
+<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 144</div>
   <div class="panel">
     <canvas class="cornerflourish" id="cornerfL" width="460" height="460"></canvas>
     <canvas class="cornerflourish flipped" id="cornerfR" width="460" height="460"></canvas>
@@ -2502,6 +2502,26 @@ function init3D(mode){
         }
       }
       document.body.style.cursor='default';
+      /* A rival's easel: the old row said which runes they had left, so the
+         stand must say it too. */
+      if(SCENE.standGroup && SCENE.standGroup.children.length){
+        const sh=ray.intersectObjects(SCENE.standGroup.children, true);
+        if(sh.length){
+          let g=sh[0].object; while(g.parent && g.userData.seat===undefined) g=g.parent;
+          const rp = (G && g.userData.seat!==undefined) ? G.players.find(q=>q.i===g.userData.seat) : null;
+          if(rp){
+            const runes = rp.hand.length ? rp.hand.slice().sort((a,b)=>a-b).join(', ') : 'none';
+            const nMagik = (rp.intrigueCount!=null) ? rp.intrigueCount : rp.intrigues.length;
+            tip.textContent = `${rp.name} \u00b7 Runes left to dance: ${runes}`
+              + ((G.mode && G.mode.magik) ? ` \u00b7 Faerie Magik: ${nMagik} (held in secret)` : '');
+            tip.style.display='block';
+            tip.style.left=Math.min(innerWidth-300, e.clientX+14)+'px';
+            tip.style.top=(e.clientY+12)+'px';
+            document.body.style.cursor='help';
+            return;
+          }
+        }
+      }
       const hh=ray.intersectObjects(SCENE.iconHits);
       if(hh.length){
         tip.textContent=hh[0].object.userData.tip;
@@ -2819,6 +2839,8 @@ function syncStands(){
     const fit=new THREE.PerspectiveCamera(cam.fov, cam.aspect, cam.near, cam.far);
     fit.position.copy(cp); fit.quaternion.copy(cam.quaternion);
     fit.updateMatrixWorld(); fit.updateProjectionMatrix();
+    const halfV=(cam.fov*Math.PI/180)/2;
+    const tanH=Math.tan(Math.atan(Math.tan(halfV)*cam.aspect));
     let spreadDeg=180;
     for(let guard=0; guard<40; guard++){        // enough steps to reach the floor
       const s=spreadDeg*Math.PI/180;
@@ -2829,10 +2851,12 @@ function syncStands(){
         // test in the view's own bearing, so a turned camera doesn't skew the fit
         const b=a+az;
         const px=Math.sin(b)*STAND_R, pz=-Math.cos(b)*STAND_R;
-        for(const edge of [-1.55, 1.55]){                     // the card's outer corners
-          const v=new THREE.Vector3(px+edge*Math.cos(b), 2.3, pz+edge*Math.sin(b)).project(fit);
-          worst=Math.max(worst, Math.abs(v.x));               // 1.0 = the screen edge
-        }
+        const v=new THREE.Vector3(px, 2.3, pz).project(fit);
+        /* The card billboards, so it always shows its full width to the view:
+           add its on-screen half-width instead of offsetting along the tangent. */
+        const d=Math.hypot(px-cp.x, 2.3-cp.y, pz-cp.z);
+        const halfW=1.35/(d*tanH);
+        worst=Math.max(worst, Math.abs(v.x)+halfW);           // 1.0 = the screen edge
       }
       if(worst<=0.97 || spreadDeg<=40) break;
       spreadDeg=Math.max(40, spreadDeg*0.93);
@@ -2848,6 +2872,7 @@ function syncStands(){
     const ang = -spread/2 + spread*t;
     st.position.set(Math.sin(ang)*STAND_R, 0, -Math.cos(ang)*STAND_R);
     st.rotation.y = ang;                      // easel squares up to the table
+    st.userData.seat = p.i;                   // so a hover can name their runes
     const away = (G.away && G.away.includes(p.i)) ||
                  (NET.role==='host' && NET.inGame && NET.names[p.i]!=null && !connForSeat(p.i));
     const face = standCardTex(p.status, p.color);
@@ -8106,6 +8131,26 @@ $('#tutMid').onclick=()=>runMidTutorial();
 const TUT = { steps:null, i:0, resolveContinue:null };
 
 /* position the four shades + ring to spotlight a target rect (or center it) */
+/* The rivals live on the table now, not in a DOM row, so the tutorial needs a
+   stand-in element whose bounding box is the seats' footprint on screen. */
+function standsSpotTarget(){
+  const SG = SCENE && SCENE.standGroup;
+  if(!SG || !SG.children.length) return null;
+  let l=1e9, t=1e9, r=-1e9, b=-1e9;
+  SG.children.forEach(st=>{
+    const box=new THREE.Box3().setFromObject(st);
+    for(const x of [box.min.x, box.max.x])
+      for(const y of [box.min.y, box.max.y])
+        for(const z of [box.min.z, box.max.z]){
+          const v=new THREE.Vector3(x,y,z).project(SCENE.camera);
+          const px=(v.x*0.5+0.5)*innerWidth, py=(-v.y*0.5+0.5)*innerHeight;
+          l=Math.min(l,px); r=Math.max(r,px); t=Math.min(t,py); b=Math.max(b,py);
+        }
+  });
+  l=Math.max(0,l); t=Math.max(0,t); r=Math.min(innerWidth,r); b=Math.min(innerHeight,b);
+  if(!(r>l && b>t)) return null;
+  return { getBoundingClientRect: ()=>({left:l, top:t, right:r, bottom:b, width:r-l, height:b-t}) };
+}
 function tutSpotlight(el){
   const mask=$('#tutmask'), ring=mask.querySelector('.ring');
   const pad=8;
@@ -8242,7 +8287,7 @@ function stepsSecrets(me){
       body:`This is <b>your Court</b>, the ${fmtH(me.house)}. Only you know your allegiance. To win, you\u2019ll want Wisps gathered in this Court, and the highest <b>Radiance</b> among the Fae who share it. Radiance is next.` },
     { target:()=>$('#mystatus'), eyebrow:'Your Secret', title:'Your Radiance (hidden!)',
       body:`This is <b>your Radiance</b>, a value from 1 to 9, and it is <b>how you win</b>: when a True Name is Called in a Court, the Fae there with the <b>highest Radiance</b> takes it. Now here\u2019s the twist: <b>it faces away from you.</b> Every rival can see your number, but <i>you cannot see your own.</i> Some favors (rewards you\u2019ll earn by dancing) let you peek.` },
-    { target:()=>$('#rivals'), eyebrow:'Your Rivals', title:'What you can see',
+    { target:()=>standsSpotTarget(), eyebrow:'Your Rivals', title:'What you can see',
       body:`Each rival\u2019s <b>Radiance is face-up to you</b>: that\u2019s the bright number on their stand. Their <b>Court stays hidden</b>. So you know everyone\u2019s worth but your own, and no one\u2019s allegiance but yours.<br><br>Tip: hover the <b>Runes</b> count on any stand to see exactly which runes that rival still holds.` },
   ];
 }
@@ -8530,7 +8575,7 @@ async function demoFavors(r1,r2){
   // FAERIE RING: visibly swap two rivals' Radiance on their stands
   const a=r1.status, b=r2.status;
   r1.status=b; r2.status=a; renderHUD();
-  await tutSeg([{ target:()=>$('#rivals'), eyebrow:'Watch \u00b7 Faerie Ring', title:'Radiance favors',
+  await tutSeg([{ target:()=>standsSpotTarget(), eyebrow:'Watch \u00b7 Faerie Ring', title:'Radiance favors',
     body:`Look at the stands: ${fmtP(r1)} and ${fmtP(r2)} just <b>swapped Radiance</b> (${a} \u2194 ${b}).<br><br><b>Why you\u2019d want this:</b> the win is <i>highest Radiance in the called Court</i>. Swap yourself the 9 you can see on someone\u2019s stand, or peek at your own hidden number before you commit.` }]);
   r1.status=a; r2.status=b; renderHUD();
   // FAERIE MOUND: a rival swaps Courts with YOU, before your eyes
