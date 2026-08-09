@@ -88,7 +88,8 @@ canvas{display:block;}
 #setup .rules b{font-family:var(--disp); font-size:12px; letter-spacing:.08em;}
  
 /* ---------- top: rival stands ---------- */
-#rivals{position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:10; display:flex; gap:10px;
+#rivals{display:none !important;   /* the Fae sit at the table now, not in a row */
+  position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:10; gap:10px;
   pointer-events:none; max-width:calc(100vw - 232px); flex-wrap:nowrap;}
 #rivals.shifted{left:calc(50% - 56px);}
 /* ---- consolidated corner menu: one tab, five choices, opens leftward ---- */
@@ -701,7 +702,7 @@ canvas{display:block;}
   <canvas id="menumist"></canvas>
   <svg id="gladebg" aria-hidden="true"></svg>
   <canvas id="menufireflies"></canvas>
-<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 130</div>
+<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 134</div>
   <div class="panel">
     <canvas class="cornerflourish" id="cornerfL" width="460" height="460"></canvas>
     <canvas class="cornerflourish flipped" id="cornerfR" width="460" height="460"></canvas>
@@ -2663,12 +2664,28 @@ function init3D(mode){
       if(SCENE && SCENE.pawnList) animateFaeries(ts, dt);
       if(SCENE && SCENE.wisps) animateWisps(ts, dt);
       if(WISP_TRAIL) WISP_TRAIL.update(dt);
+      /* The seats: each card turns to face the camera so it stays legible at
+         any angle or zoom, while the easel it rests in stays put on the table.
+         The active Fae's ring breathes. */
+      if(SCENE && SCENE.standGroup){
+        SCENE.standGroup.children.forEach(st=>{
+          const card=st.userData.card;
+          if(card){
+            const dx=camera.position.x-st.position.x, dz=camera.position.z-st.position.z;
+            card.rotation.y = Math.atan2(dx, dz) - st.rotation.y;
+          }
+          const ring=st.userData.ring;
+          if(ring && ring.material.opacity>0.02)
+            ring.material.opacity = .55 + Math.sin(ts*3.2)*.28;
+        });
+      }
     }
     renderer.render(scene,camera);
   }
   requestAnimationFrame(loop);
  
-  SCENE={scene,pawnGroup,nobleGroup,quads,tileGroup,tiles:[],ghosts:[],pawnList:[],iconHits:iconHitList, callCrown:()=>{calling=true;}, camera};
+  const standGroup=new THREE.Group(); scene.add(standGroup);
+  SCENE={scene,pawnGroup,nobleGroup,quads,tileGroup,tiles:[],ghosts:[],pawnList:[],iconHits:iconHitList, callCrown:()=>{calling=true;}, camera, standGroup};
   WISP_TRAIL=makeWispTrail(scene, TEX_MOTE);
 }
  
@@ -2693,6 +2710,143 @@ function nameTagMat(name){
   mat._w=w;
   SCENE.nameTags[name]=mat;
   return mat;
+}
+
+/* ---------------------------------------------------------------
+   THE SEATS AT THE TABLE
+   Every Fae keeps an easel on the board's far arc: their Radiance card
+   standing in it, their name on a plate above. The card faces AWAY from
+   its owner exactly as the rules demand, so a rival's number faces you
+   across the table and your own shows you only its back.
+   Seats fan across the far side (never a full ring) because a card at
+   the table's edge would be edge-on and unreadable on a fixed screen.
+   --------------------------------------------------------------- */
+const STAND_R = 13.2;                    // on the grass: the board ends at 11.6, the table rim at 15.6
+function standCardTex(num, colorCss){
+  const c=document.createElement('canvas'); c.width=256; c.height=356;
+  const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,0,356); g.addColorStop(0,'#faf3dd'); g.addColorStop(1,'#e6d9b8');
+  x.fillStyle=g; x.fillRect(0,0,256,356);
+  x.strokeStyle='#b8923f'; x.lineWidth=9; x.strokeRect(9,9,238,338);
+  x.strokeStyle='rgba(184,146,63,.42)'; x.lineWidth=2; x.strokeRect(22,22,212,312);
+  x.fillStyle='#6b5a38'; x.font='700 21px Cinzel, Georgia, serif'; x.textAlign='center';
+  x.fillText('RADIANCE', 128, 52);
+  x.fillStyle='#241a33'; x.font='900 172px Cinzel, Georgia, serif'; x.textBaseline='middle';
+  x.fillText(String(num), 128, 198);
+  x.fillStyle=colorCss; x.beginPath(); x.arc(128, 314, 13, 0, Math.PI*2); x.fill();
+  const t=new THREE.CanvasTexture(c); t.anisotropy=8; return t;
+}
+function standBackTex(){
+  const c=document.createElement('canvas'); c.width=256; c.height=356;
+  const x=c.getContext('2d');
+  x.fillStyle='#3a2a5e'; x.fillRect(0,0,256,356);
+  x.strokeStyle='#4a3670'; x.lineWidth=14;
+  for(let i=-356;i<356;i+=28){ x.beginPath(); x.moveTo(i,0); x.lineTo(i+356,356); x.stroke(); }
+  x.strokeStyle='#b8923f'; x.lineWidth=9; x.strokeRect(9,9,238,338);
+  x.fillStyle='#f0d98a'; x.font='900 64px Cinzel, Georgia, serif';
+  x.textAlign='center'; x.textBaseline='middle'; x.fillText('\u2727', 128, 178);
+  const t=new THREE.CanvasTexture(c); t.anisotropy=8; return t;
+}
+function standPlateTex(name, colorCss, sub, away){
+  const label=String(name||'?').slice(0,14).toUpperCase();
+  const c=document.createElement('canvas');
+  const meas=c.getContext('2d'); meas.font='700 34px Cinzel, Georgia, serif';
+  const w=Math.max(150, Math.ceil(meas.measureText(label).width)+96);
+  c.width=w; c.height=86;
+  const x=c.getContext('2d');
+  x.fillStyle='rgba(16,10,26,.88)'; x.strokeStyle=away?'#b05a3a':'#b8923f'; x.lineWidth=3;
+  const r=13; x.beginPath();
+  x.moveTo(r,4); x.lineTo(w-r,4); x.quadraticCurveTo(w-4,4,w-4,17); x.lineTo(w-4,69);
+  x.quadraticCurveTo(w-4,82,w-r,82); x.lineTo(r,82); x.quadraticCurveTo(4,82,4,69);
+  x.lineTo(4,17); x.quadraticCurveTo(4,4,r,4); x.closePath(); x.fill(); x.stroke();
+  x.fillStyle=colorCss; x.beginPath(); x.arc(26, 30, 8, 0, Math.PI*2); x.fill();
+  x.font='700 30px Cinzel, Georgia, serif'; x.textAlign='center'; x.textBaseline='middle';
+  x.fillStyle=away?'#b05a3a':'#f0d98a'; x.fillText(label, (w+20)/2, 30);
+  x.font='400 21px EB Garamond, Georgia, serif'; x.fillStyle='#c9b6e0';
+  x.fillText(sub||'', w/2, 62);
+  const t=new THREE.CanvasTexture(c); t.anisotropy=8; t._w=w; return t;
+}
+function buildStand(){
+  const g=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({color:0x2a1f3d, roughness:.88});
+  const base=new THREE.Mesh(new THREE.BoxGeometry(3.1,.18,.95), wood); base.position.y=.09; g.add(base);
+  const prop=new THREE.Mesh(new THREE.BoxGeometry(.18,1.7,.18), wood);
+  prop.position.set(0,.9,-.3); prop.rotation.x=-0.26; g.add(prop);
+  const lip=new THREE.Mesh(new THREE.BoxGeometry(3.1,.14,.16), wood); lip.position.set(0,.23,.3); g.add(lip);
+  const blank=new THREE.MeshStandardMaterial({color:0xe6d9b8, roughness:.8});
+  const card=new THREE.Mesh(new THREE.BoxGeometry(2.7,3.7,.07),
+    [blank,blank,blank,blank,
+     new THREE.MeshStandardMaterial({roughness:.72}), new THREE.MeshStandardMaterial({roughness:.72})]);
+  card.position.set(0,2.0,.07); g.add(card); g.userData.card=card;
+  const plate=new THREE.Sprite(new THREE.SpriteMaterial({transparent:true, depthWrite:false, depthTest:false}));
+  plate.position.set(0,4.4,0); g.add(plate); g.userData.plate=plate;
+  const ring=new THREE.Mesh(new THREE.RingGeometry(1.8,2.25,32),
+    new THREE.MeshBasicMaterial({color:0xd8b45a, transparent:true, opacity:0, side:THREE.DoubleSide}));
+  ring.rotation.x=-Math.PI/2; ring.position.y=.04; g.add(ring); g.userData.ring=ring;
+  return g;
+}
+function syncStands(){
+  if(!SCENE || !SCENE.standGroup || !G || !G.players) return;
+  const SG=SCENE.standGroup, ps=G.players;
+  const seated=ps.filter(p=>p.i!==MY_SEAT);       // you sit here, not across the table
+  const n=seated.length;
+  while(SG.children.length < n) SG.add(buildStand());
+  while(SG.children.length > n) SG.remove(SG.children[SG.children.length-1]);
+  /* You sit nearest the camera (south, +z). Rivals fan across the far arc in
+     seat order, so play still travels round the table in the right direction. */
+  const others=n;
+  /* Fan as wide as the view allows, then pull in until every easel is on
+     screen. A portrait phone sees a narrow cone, so the arc closes itself
+     rather than seating anyone out of sight. */
+  let spreadDeg = Math.min(230, 96+others*26);
+  const cam=SCENE.camera, halfV=(cam.fov*Math.PI/180)/2;
+  const halfH=Math.atan(Math.tan(halfV)*cam.aspect);
+  for(let guard=0; guard<14; guard++){
+    const s=spreadDeg*Math.PI/180;
+    let worst=0;
+    for(let k=0;k<n;k++){
+      const t = n===1 ? 0.5 : k/(n-1);
+      const a = -s/2 + s*t;
+      const px=Math.sin(a)*STAND_R, pz=-Math.cos(a)*STAND_R;
+      const dx=px-cam.position.x, dz=pz-cam.position.z;
+      const depth=Math.abs(dz)||0.001;
+      worst=Math.max(worst, Math.abs(dx)/(depth*Math.tan(halfH)));   // 1.0 = screen edge
+    }
+    if(worst<=0.82) break;                    // a little margin for the name plate
+    spreadDeg*=0.88;
+  }
+  const spread = spreadDeg*Math.PI/180;
+  seated.forEach((p,idx)=>{
+    const st=SG.children[idx];
+    const mine = false;
+    const rank=(p.i-MY_SEAT+ps.length)%ps.length - 1;   // 0..n-1 going round from you
+    const t = n===1 ? 0.5 : rank/(n-1);
+    const ang = -spread/2 + spread*t;
+    st.position.set(Math.sin(ang)*STAND_R, 0, -Math.cos(ang)*STAND_R);
+    st.rotation.y = ang;                      // easel squares up to the table
+    const away = (G.away && G.away.includes(p.i)) ||
+                 (NET.role==='host' && NET.inGame && NET.names[p.i]!=null && !connForSeat(p.i));
+    const face = standCardTex(p.status, p.color);
+    const card = st.userData.card;
+    if(card.material[4].map) card.material[4].map.dispose();
+    card.material[4].map = face; card.material[4].needsUpdate = true;
+    if(!card.material[5].map){ card.material[5].map = standBackTex(); card.material[5].needsUpdate = true; }
+    const nMagik=(p.intrigueCount!=null)?p.intrigueCount:p.intrigues.length;
+    const sub = (G.mode && G.mode.magik)
+      ? `Runes ${p.hand.length}  \u00b7  Magik ${nMagik}` : `Runes ${p.hand.length}`;
+    const key = p.name+'|'+sub+'|'+away+'|'+p.status;
+    if(st.userData.plateKey !== key){
+      st.userData.plateKey = key;
+      const t=standPlateTex(p.name, p.color, sub, away);
+      const pm=st.userData.plate.material;
+      if(pm.map) pm.map.dispose();
+      pm.map=t; pm.needsUpdate=true;
+      st.userData.plate.scale.set(t._w/86*1.55, 1.55, 1);
+    }
+    st.traverse(o=>{ if(o.material && o.material.opacity!=null && o!==st.userData.ring){
+      o.material.transparent = away; o.material.opacity = away? .5 : 1; } });
+    st.userData.ring.material.opacity = (!G.over && ps[G.turn]===p) ? .7 : 0;
+  });
 }
 function syncBoard(){
   const {pawnGroup,nobleGroup}=SCENE;
@@ -2930,6 +3084,7 @@ function syncBoard(){
       SCENE.wisps.push({flame,tongue,embers,ph:wr()*Math.PI*2});
     }
   });
+  syncStands();          // the seats follow every change of state
 }
  
 /* ============================================================
@@ -3226,6 +3381,7 @@ function renderHUD(){
     }
     roost.appendChild(chip);
   });
+  try{ syncStands(); }catch(e){}          // rune/Magik counts and the active seat
   const R=$('#rivals'); R.innerHTML='';
   { const rivals=G.players.length-1;
     R.classList.toggle('crowded', rivals>=4); }
