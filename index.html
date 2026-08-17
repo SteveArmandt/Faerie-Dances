@@ -702,7 +702,7 @@ canvas{display:block;}
   <canvas id="menumist"></canvas>
   <svg id="gladebg" aria-hidden="true"></svg>
   <canvas id="menufireflies"></canvas>
-<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 145</div>
+<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 171 \u00b7 V6.3</div>
   <div class="panel">
     <canvas class="cornerflourish" id="cornerfL" width="460" height="460"></canvas>
     <canvas class="cornerflourish flipped" id="cornerfR" width="460" height="460"></canvas>
@@ -890,7 +890,7 @@ canvas{display:block;}
     <span class="tname" style="color:#f0d98a">FAERIE BRIDGE</span><span class="tsub">Magik + Stone</span>
     
   
-    <div class="favline"><span class="favic"><svg><use href="#ic-draw"/></svg></span><span class="favtx">Gain a Faerie Magik card (always), then optionally move or flip a stone.</span></div>
+    <div class="favline"><span class="favic"><svg><use href="#ic-draw"/></svg></span><span class="favtx">Gain a Faerie Magik card (always), then you must move or flip a stone.</span></div>
     <div class="favline"><span class="favic"><svg><use href="#ic-move"/></svg></span><span class="favtx">Move a conjured stone to a dance’s outer end; its Glamours ride along (no tumble).</span></div>
     <div class="favline"><span class="favic"><svg><use href="#ic-flip"/></svg></span><span class="favtx">Gain a Faerie Magik card, then flip a stone. Anyone on it tumbles from the dance.</span></div>
   </div>
@@ -1140,6 +1140,40 @@ const HOUSES = [
   {id:'river',    name:'River Court',    css:'#2f6f8a', hex:0x2f6f8a},
 ];
 const HOUSE_BY_ID = Object.fromEntries(HOUSES.map(h=>[h.id,h]));
+/* ---------- THE HIGH FAE PATRONS (v6.0) ----------
+   Every Court card bears one of the four High Fae. Declaring (face up, as the
+   very first thing on your turn) grants the patron's gift for as long as the
+   card lies face up. A declared card stays declared through swaps; a discarded
+   declared card is replaced by a face-down draw. */
+const PATRONS=['queen','king','prince','princess'];
+const PATRON_NAME={queen:'The Queen', king:'The King', prince:'The Prince', princess:'The Princess'};
+const PRINCESS_NEXT={meadow:'river', river:'forest', forest:'mountain', mountain:'meadow'};
+const PRINCESS_PREV={river:'meadow', forest:'river', mountain:'forest', meadow:'mountain'};
+const PATRON_DEFS={
+  queen:   'Add +2 to your Radiance at the Call, and you break any ties.',
+  king:    'Each turn, when you dance a Fae Rune (or dance by Midsummer Reel), you gain 1 additional step.',
+  prince:  'When you declare, place 1 Wisp in any Court. While declared, no Wisp can be lured out of your Court.',
+  princess:'While declared, you also belong to both adjacent Courts: you may win a Call in any of your three Courts.',
+};
+function patronText(p){
+  if(p.patron==='princess')
+    return 'While declared, you also belong to the '+HOUSE_BY_ID[PRINCESS_NEXT[p.house]].name+' and the '
+      +HOUSE_BY_ID[PRINCESS_PREV[p.house]].name+': you may win a Call in any of your three Courts.';
+  return PATRON_DEFS[p.patron]||'';
+}
+/* Does p belong to houseId for Calls and empty-Court checks? */
+function belongsToCourt(p, houseId){
+  return p.house===houseId || (p.declared && p.patron==='princess' &&
+    (PRINCESS_NEXT[p.house]===houseId || PRINCESS_PREV[p.house]===houseId));
+}
+/* Radiance as the Call weighs it: a declared Queen counts 1 higher. */
+function effRad(p){ return p.status + ((p.declared && p.patron==='queen') ? 2 : 0); }
+/* Is a court under a declared Prince's protection (no Wisp may be lured out)? */
+function protectedCourt(h){
+  return G && G.players.some(q=>q.declared && q.patron==='prince' && q.house===h);
+}
+function kingBonus(p){ return (p.declared && p.patron==='king') ? 1 : 0; }
+function fmtPatron(p){ return `<b>${PATRON_NAME[p.patron]}</b> of the ${fmtH(p.house)}`; }
 const AI_NAMES = ['Thistle','Bramblewyn','Elderlight','Nightmoth','Fernshade'];
 /* True Names bestowed by the High Fae on the winner — invented coinages in
    Welsh & Gaelic orthography, chosen to be gorgeous and unpronounceable.
@@ -1183,7 +1217,7 @@ const INTRIGUE_DEFS = {
   'Whispered Lore':    {n:2, d:'Search the Faerie Magik discards and take one. Play during your turn.'},
   'Bountiful Harvest': {n:2, d:'Gain 3 extra dance steps this turn. Play during your turn.'},
   'Blight':            {n:2, d:'The completing player unveils no Wisp; every other completion step still occurs. Play at anyone\u2019s completed dance.'},
-  'Scrying Pool':      {n:2, d:'Reveal your Radiance to yourself. Play anytime.'},
+  'Scrying Pool':      {n:2, d:'Look at your own Radiance card, or at a rival’s Court card. Play anytime.'},
   'Wisp-Lure':         {n:2, d:'Move a Wisp from one Court to another. Play anytime.'},
   'Snuff Out':         {n:2, d:'Remove a Wisp from a Court. Play anytime.'},
   'Wisp-Call':         {n:2, d:'Place a Wisp in a Court. Play anytime.'},
@@ -1366,7 +1400,7 @@ function newGame(nPlayers, modeId, opts){
   const mode = MODES[modeId] || MODES.midsummer;
   TRACKS = mode.tracks;
   const statusDeck=shuffle([1,2,3,4,5,6,7,8,9]);
-  const houseDeck=shuffle(HOUSES.flatMap(h=>[h.id,h.id,h.id,h.id]));
+  const houseDeck=shuffle(HOUSES.flatMap(h=>PATRONS.map(pt=>({h:h.id, pt}))));
   const intrigueDeck = mode.magik
     ? shuffle(Object.entries(INTRIGUE_DEFS).flatMap(([k,v])=>Array(v.n).fill(k)))
     : [];
@@ -1376,14 +1410,17 @@ function newGame(nPlayers, modeId, opts){
       i, isHuman: humanSeats.includes(i),
       name: seatNames[i] || (humanSeats.includes(i) ? (i===MY_SEAT?'You':'Player '+(i+1)) : AI_NAMES[(i-1+AI_NAMES.length)%AI_NAMES.length]),
       color: PLAYER_COLORS[i],
-      house: houseDeck.pop(),
+      house: null, patron: null, declared: false,
       status: statusDeck.pop(),
       knownStatus: null,                    // what this player knows about their OWN status
       intrigues: mode.magik ? [intrigueDeck.pop()] : [],
       hand:[1,2,3,4,5,6], discard:[],
       cands: [{track:null,steps:0},{track:null,steps:0}],
       knownHouses:{},                       // houses learned about others, {playerIndex: houseId}
+      knownPatrons:{},                      // patrons glimpsed via peeks, {playerIndex: patron}
     });
+    const card=houseDeck.pop();
+    players[i].house=card.h; players[i].patron=card.pt;
   }
   const steps={};
   mode.tracks.forEach(tr=>{ steps[tr]=mkTrack(tr==='Faerie Bridge' && mode.conjuredStart, tr==='Faerie Bridge'?7:6); });   // the Bridge runs seven stones: no rune crosses it in one turn
@@ -2148,8 +2185,8 @@ function init3D(mode){
  
   if(mode.tracks.includes('Faerie Bridge')){
     boardSide('FAERIE BRIDGE', 'MAGIK + STONE',    ['move','flip'],
-      ['Gain a Faerie Magik card, then move a conjured stone to a dance\u2019s outer end; its Glamours ride along.',
-       'Gain a Faerie Magik card, then flip a stone. Anyone on it tumbles from the dance.'],
+      ['Gain a Faerie Magik card; you must then move or flip a stone. Moving carries a conjured stone (and its Glamours) to a dance\u2019s outer end.',
+       'Gain a Faerie Magik card; you must then move or flip a stone. Flipping tumbles anyone standing on it.'],
       0, 7.18, 0);
   }
  
@@ -2513,7 +2550,8 @@ function init3D(mode){
             const runes = rp.hand.length ? rp.hand.slice().sort((a,b)=>a-b).join(', ') : 'none';
             const nMagik = (rp.intrigueCount!=null) ? rp.intrigueCount : rp.intrigues.length;
             tip.textContent = `${rp.name} \u00b7 Runes left to dance: ${runes}`
-              + ((G.mode && G.mode.magik) ? ` \u00b7 Faerie Magik: ${nMagik} (held in secret)` : '');
+              + ((G.mode && G.mode.magik) ? ` \u00b7 Faerie Magik: ${nMagik} (held in secret)` : '')
+              + (rp.declared ? ` \u00b7 DECLARED: ${PATRON_NAME[rp.patron]} of the ${HOUSE_BY_ID[rp.house].name}` : '');
             tip.style.display='block';
             tip.style.left=Math.min(innerWidth-300, e.clientX+14)+'px';
             tip.style.top=(e.clientY+12)+'px';
@@ -2697,6 +2735,18 @@ function init3D(mode){
           const ring=st.userData.ring;
           if(ring && ring.material.opacity>0.02)
             ring.material.opacity = .55 + Math.sin(ts*3.2)*.28;
+          const fl=st.userData.flash;
+          if(fl && fl.visible){
+            /* Sit the plate between the easel and the viewer, so it reads as
+               being BENEATH the card from wherever the board is being watched.
+               An end seat faces inward, so a fixed forward offset would slide
+               the plate sideways across the screen instead of downward. */
+            const a=Math.atan2(camera.position.x-st.position.x, camera.position.z-st.position.z) - st.rotation.y;
+            fl.position.set(Math.sin(a)*2.6, 0.28, Math.cos(a)*2.6);
+            const left=(st.userData.flashUntil||0)-ts;
+            if(left<=0){ fl.visible=false; fl.material.opacity=0; }
+            else fl.material.opacity=Math.min(1, left/0.6);   // holds, then fades away
+          }
         });
       }
     }
@@ -2800,10 +2850,44 @@ function buildStand(){
   card.position.set(0,2.28,.07); g.add(card); g.userData.card=card;   // bottom edge clears the lip
   const plate=new THREE.Sprite(new THREE.SpriteMaterial({transparent:true, depthWrite:false, depthTest:false}));
   plate.position.set(0,4.65,0); g.add(plate); g.userData.plate=plate;
+  /* A short word beneath the easel saying what this Fae just did with a favor,
+     so a rival's turn reads at a glance without watching the whole board. */
+  const flash=new THREE.Sprite(new THREE.SpriteMaterial({transparent:true, depthWrite:false, depthTest:false, opacity:0}));
+  flash.position.set(0,0.28,2.6); flash.visible=false; g.add(flash); g.userData.flash=flash;
   const ring=new THREE.Mesh(new THREE.RingGeometry(1.8,2.25,32),
     new THREE.MeshBasicMaterial({color:0xd8b45a, transparent:true, opacity:0, side:THREE.DoubleSide}));
   ring.rotation.x=-Math.PI/2; ring.position.y=.04; g.add(ring); g.userData.ring=ring;
   return g;
+}
+function standFlashTex(text, colorCss){
+  const label=String(text||'');
+  const c=document.createElement('canvas');
+  const meas=c.getContext('2d'); meas.font='600 30px '+"'EB Garamond', Georgia, serif";
+  const w=Math.max(190, Math.ceil(meas.measureText(label).width)+56);
+  c.width=w; c.height=64;
+  const x=c.getContext('2d');
+  x.fillStyle='rgba(10,6,20,.90)'; x.strokeStyle=colorCss||'#d8b45a'; x.lineWidth=2.5;
+  const r=11; x.beginPath();
+  x.moveTo(r,3); x.lineTo(w-r,3); x.quadraticCurveTo(w-3,3,w-3,14); x.lineTo(w-3,50);
+  x.quadraticCurveTo(w-3,61,w-r,61); x.lineTo(r,61); x.quadraticCurveTo(3,61,3,50);
+  x.lineTo(3,14); x.quadraticCurveTo(3,3,r,3); x.closePath(); x.fill(); x.stroke();
+  x.font='600 30px '+"'EB Garamond', Georgia, serif";
+  x.textAlign='center'; x.textBaseline='middle'; x.fillStyle='#f2e6c8';
+  x.fillText(label, w/2, 33);
+  const t=new THREE.CanvasTexture(c); t.anisotropy=8; t._w=w; return t;
+}
+/* Flash a line beneath a Fae's stand for about two and a half seconds. */
+function standFlash(p, text){
+  if(!p || !SCENE || !SCENE.standGroup) return;
+  const st=SCENE.standGroup.children.find(s=>s.userData.seat===p.i);
+  if(!st || !st.userData.flash) return;
+  const fl=st.userData.flash, m=fl.material;
+  if(m.map) m.map.dispose();
+  const tex=standFlashTex(text, p.color);
+  m.map=tex; m.needsUpdate=true; m.opacity=1;
+  fl.scale.set(tex._w/64*0.85, 0.85, 1);
+  fl.visible=true;
+  st.userData.flashUntil=(performance.now()*0.001)+2.5;
 }
 function syncStands(){
   if(!SCENE || !SCENE.standGroup || !G || !G.players) return;
@@ -2838,8 +2922,9 @@ function syncStands(){
     card.material[4].map = face; card.material[4].needsUpdate = true;
     if(!card.material[5].map){ card.material[5].map = standBackTex(); card.material[5].needsUpdate = true; }
     const nMagik=(p.intrigueCount!=null)?p.intrigueCount:p.intrigues.length;
-    const sub = (G.mode && G.mode.magik)
-      ? `Runes ${p.hand.length}  \u00b7  Magik ${nMagik}` : `Runes ${p.hand.length}`;
+    const decTag = p.declared ? (PATRON_NAME[p.patron].replace('The ','')+' of '+HOUSE_BY_ID[p.house].name.replace(' Court','')+' \u00b7 ') : '';
+    const sub = decTag + ((G.mode && G.mode.magik)
+      ? `Runes ${p.hand.length}  \u00b7  Magik ${nMagik}` : `Runes ${p.hand.length}`);
     const key = p.name+'|'+sub+'|'+away+'|'+p.status;
     if(st.userData.plateKey !== key){
       st.userData.plateKey = key;
@@ -3208,6 +3293,7 @@ function sanitizeArmEv(p, ev, kinds){
   if(!ev || typeof ev!=='object') return {type:'end'};
   if(ev.type==='end') return {type:'end'};
   if(ev.type==='skip') return kinds.includes('skip') ? {type:'skip'} : {type:'end'};
+  if(ev.type==='declare') return (kinds.includes('declare') && !p.declared) ? {type:'declare'} : {type:'end'};
   if(ev.type==='honor')
     return (kinds.includes('honor') && Number.isInteger(ev.v) && p.hand.includes(ev.v))
       ? {type:'honor', v:ev.v} : {type:'end'};
@@ -3392,7 +3478,9 @@ function renderHUD(){
   { const rivals=G.players.length-1;
     R.classList.toggle('crowded', rivals>=4); }
   G.players.filter(p=>p.i!==MY_SEAT).forEach(p=>{
-    const houseMini = `<div class="mini back hcard" title="Courts stay hidden: remember what you glimpse">C</div>`;
+    const houseMini = p.declared
+      ? `<div class="mini hcard" style="background:${HOUSE_BY_ID[p.house].css}; color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-size:7px; line-height:1.15; letter-spacing:.02em; text-shadow:0 1px 2px rgba(0,0,0,.7);" title="${p.name} has DECLARED: ${PATRON_NAME[p.patron]} of the ${HOUSE_BY_ID[p.house].name}. ${PATRON_DEFS[p.patron]}"><span style="font-size:10px;">\u2726</span>${PATRON_NAME[p.patron].replace('The ','')}</div>`
+      : `<div class="mini back hcard" title="Courts stay hidden: remember what you glimpse">C</div>`;
     const d=document.createElement('div');
     const isTurn = G.players[G.turn]===p && !G.over;
     d.className='stand panel'+(isTurn?' active':'');
@@ -3422,8 +3510,16 @@ function renderHUD(){
   mh.className='bigcard house cbg cbg-'+H.id;
   mh.style.backgroundColor=H.css;
   mh.style.backgroundSize='82%'; mh.style.backgroundPosition='center';
-  mh.innerHTML='';
-  mh.title=H.name+': your allegiance';
+  mh.style.position='relative';
+  mh.style.boxShadow = me.declared ? '0 0 0 2px #d8b45a, 0 0 12px rgba(216,180,90,.65)' : '';
+  const canDeclare = HUMAN && HUMAN.kinds.includes('declare') && !me.declared;
+  const ptShort = PATRON_NAME[me.patron] ? PATRON_NAME[me.patron].replace('The ','').toUpperCase() : '';
+  mh.innerHTML =
+    `<div style="position:absolute; left:0; right:0; bottom:2px; text-align:center; font-family:var(--disp); font-size:8px; letter-spacing:.08em; color:${me.declared?'#ffe9b0':'rgba(255,255,255,.92)'}; text-shadow:0 1px 2px rgba(0,0,0,.8); pointer-events:none;">${ptShort}${me.declared?' \u2726':''}</div>`
+    + (canDeclare ? `<button id="declarebtn" style="position:absolute; left:50%; top:-12px; transform:translateX(-50%); z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.08em; padding:3px 8px; border-radius:4px; border:1px solid #d8b45a; background:#2a1f3d; color:#f0d98a; cursor:pointer; box-shadow:0 0 8px rgba(216,180,90,.5); white-space:nowrap;">\u2726 DECLARE</button>` : '');
+  mh.title = H.name+': your allegiance. '+(PATRON_NAME[me.patron]||'')+' supports you \u2014 '+patronText(me)
+    + (me.declared ? ' (DECLARED: the gift is yours.)' : ' (Declare as the very first thing on your turn.)');
+  if(canDeclare){ const db=mh.querySelector('#declarebtn'); if(db) db.onclick=(e)=>{ e.stopPropagation(); humanEvent({type:'declare'}); }; }
   const ms=$('#mystatus');
   ms.className='bigcard back'; ms.textContent='?';
   ms.title = me.knownStatus!==null
@@ -3822,8 +3918,9 @@ const RULEBOOK_HTML = {
   masquerade: `
     <div class="glance"><b>YOUR TURN AT A GLANCE</b>
       <ul>
+        <li><b>Declare your patron</b> (optional, once): the very first thing on your turn, turn your Court card face up to gain your High Fae patron\u2019s gift.</li>
         <li><b>Dance</b> a Fae Rune (its number is your steps, split freely between your two Glamours), or <b>sit out</b> to reclaim your spent runes.</li>
-        <li><b>Faerie Magik</b> plays any time on your turn; reaction cards answer rivals even off-turn (a dialog will ask you).</li>
+        <li><b>Faerie Magik</b> plays any time on your turn; reaction cards answer rivals only during a reaction window (a dialog will ask you).</li>
         <li><b>Finish a dance</b> to unveil a Wisp in any Court, draw a Magik card, and take that dance\u2019s favor.</li>
         <li><b>Call for your True Name</b> in place of your favor when a Court holds <b>__Q__</b> Wisps. Highest Radiance there wins.</li>
       </ul>
@@ -3831,17 +3928,24 @@ const RULEBOOK_HTML = {
     <h4>THE GOAL</h4>
     <p>Win by holding the <b>highest Radiance</b> in the Court where a <b>True Name is Called</b>. A Call happens two ways: a Fae who completes a dance may Call in a Court holding <b>__Q__</b> or more Wisps, or a Court receiving its <b>__C__th</b> Wisp forces a Call there immediately. When a Call resolves, all Fae reveal their Court and Radiance, and the highest Radiance in the called Court wins.</p>
     <h4>WHAT YOU HOLD</h4>
-    <p>A secret <b>Court card</b> (only you know your allegiance, shown by its design and color). A <b>Radiance card</b> from 1 to 9 that faces <b>away</b> from you: the whole table sees your number except you. Two <b>Glamours</b>, which you send into the dance in your stead. Six <b>Fae Runes</b> (1\u20136) for dancing. And <b>Faerie Magik</b> cards, earned by completing dances.</p>
+    <p>A secret <b>Court card</b>: your allegiance, bearing the <b>High Fae patron</b> who supports you (each Court has one card for each of the Queen, King, Prince, and Princess). A <b>Radiance card</b> from 1 to 9 that faces <b>away</b> from you: the whole table sees your number except you. Two <b>Glamours</b>, six <b>Fae Runes</b> (1\u20136), and <b>Faerie Magik</b> cards: you begin with one, and earn another with every completed dance.</p>
+    <h4>THE HIGH FAE</h4>
+    <p><b>As the very first thing on your turn</b>, before any rune, Faerie Magik, or other action, you may turn your Court card <b>face up</b> (the <b>Declare</b> button on your card). Your allegiance and patron are now public, and your patron\u2019s gift is yours for as long as the card lies face up. A declared card is never turned face down while you hold it; you cannot declare at any other moment. If a declared Court card is swapped, it remains declared for its new player. If it is discarded, the new Court card is kept face down.</p>
+    <p><b>The Queen</b>: add +2 to your Radiance at the Call, and you break any ties.<br>
+    <b>The King</b>: each turn, when you dance a Fae Rune (or dance by Midsummer Reel), you gain 1 additional step.<br>
+    <b>The Prince</b>: when you declare, place 1 Wisp in any Court. While declared, no Wisp can be lured out of your Court.<br>
+    <b>The Princess</b>: while declared, you also belong to both adjacent Courts, printed on the card (Forest: River &amp; Mountain \u00b7 River: Meadow &amp; Forest \u00b7 Mountain: Forest &amp; Meadow \u00b7 Meadow: Mountain &amp; River): you may win a Call in any of your three Courts, and you count as belonging to each.</p>
+    <p>A Patron\u2019s power only matters if it is already declared prior to the Call; if a Patron is undeclared at the Call, disregard the Patron\u2019s power.</p>
     <h4>DANCING</h4>
     <p>Play a rune and spend its number as steps. Your <b>two Glamours</b> begin beside your hand: click or tap a Glamour, then a lit stone, to move it. Split the steps as you like; unused steps are lost. When all six runes are danced they return to your hand, or sit out to reclaim them early.</p>
     <h4>FINISHING A DANCE</h4>
     <p>Reach a spiral\u2019s final stone and three things happen, in order: you unveil a <b>Will o\u2019 the Wisp</b> in any Court you like, you draw a <b>Faerie Magik</b> card, and the High Fae grant that dance\u2019s <b>favor</b>:</p>
     <p><b>Faerie Ring</b> (Radiance favors): swap Radiance with a rival, or peek at your own.<br>
-    <b>Faerie Fort</b> (Wisp favors): lure a Wisp into a different Court, or snuff <b>two Wisps</b>, from any Courts.<br>
-    <b>Faerie Mound</b> (Court favors): swap Courts with a rival, or peek at theirs.</p>
-    <p>Your Glamour then returns to wait beside your hand, and it cannot rejoin the dance until the turn ends: <b>each Glamour completes at most one dance per turn</b>. Remaining steps pass to your other Glamour; if both have danced, they are lost.</p>
+    <b>Faerie Fort</b> (Wisp favors): lure a Wisp into a different Court (never out of a declared Prince\u2019s Court), or snuff <b>two Wisps</b>, from any Courts.<br>
+    <b>Faerie Mound</b> (Court favors): swap Courts with a rival (a face-up card arrives declared), or peek at theirs \u2014 learning their Court <i>and</i> their patron.</p>
+    <p>Your Glamour then returns to wait beside your hand: <b>each Glamour completes at most one dance per turn</b>. Remaining steps pass to your other Glamour; if both have danced, they are lost.</p>
     <h4>THE CALL</h4>
-    <p>When a Court gathers <b>__Q__</b> Wisps, a Fae finishing a dance may spend their favor to <b>Call for their True Name</b> there. The Call pauses the dance: rivals may answer with Faerie Magik, luring or snuffing Wisps (never Blight). If the Court drops below <b>__Q__</b>, <b>the Call fades</b> and play goes on. If it holds, everyone reveals, and the highest Radiance in that Court is named. The <b>__C__th</b> Wisp placed in a Court forces an immediate Call there, whether anyone wishes it or not.</p>
+    <p>When a Court gathers <b>__Q__</b> Wisps, a Fae finishing a dance may spend their favor to <b>Call for their True Name</b> there. The Call pauses the dance: rivals may answer with Faerie Magik, luring or snuffing Wisps (never Blight). If the Court drops below <b>__Q__</b>, <b>the Call fades</b> and play goes on. If it holds, everyone reveals, and the highest Radiance in that Court is named \u2014 a declared Queen counting 2 higher and taking ties, a declared Princess eligible in all three of her Courts. The <b>__C__th</b> Wisp placed in a Court forces an immediate Call there, whether anyone wishes it or not.</p>
     <h4>FAERIE MAGIK</h4>
     <p>Trick cards, one earned with every completed dance. Play them any time on your turn; some react to others (you\u2019ll be asked). <b>Cold Iron</b> cancels another Magik, even another Cold Iron (a canceled cancel leaves the original standing). <b>Blight</b> stops a Wisp being placed. Hover any card for its text.</p>
     <p>Once played, a Magik card is spent for good: it rests in the discard, and the deck is never rebuilt from those ashes; only <b>Whispered Lore</b> may pluck a single card back. <b>Cold Iron</b> is sterner still: once used, it passes out of the game entirely, beyond even Lore\u2019s reach.</p>
@@ -3850,37 +3954,45 @@ const RULEBOOK_HTML = {
   midsummer: `
     <div class="glance"><b>YOUR TURN AT A GLANCE</b>
       <ul>
+        <li><b>Declare your patron</b> (optional, once): the very first thing on your turn, turn your Court card face up to gain your High Fae patron\u2019s gift.</li>
         <li><b>Dance</b> a Fae Rune and its power fires: the <b>1</b> flips a stone first, the <b>2</b> moves a Conjured Stone first, and the <b>3</b>\u2013<b>6</b> may trade their steps for their power. Or <b>sit out</b> to reclaim spent runes.</li>
-        <li><b>Faerie Magik</b> plays any time on your turn; reaction cards answer rivals even off-turn (a dialog will ask you).</li>
-        <li><b>Finish a dance</b> to unveil a Wisp in any Court and take that dance\u2019s favor. The Faerie Bridge\u2019s favor always grants a Magik card.</li>
+        <li><b>Faerie Magik</b> plays any time on your turn; reaction cards answer rivals only during a reaction window (a dialog will ask you).</li>
+        <li><b>Finish a dance</b> to unveil a Wisp in any Court and take that dance\u2019s favor. The Faerie Bridge\u2019s favor always grants a Magik card, then a mandatory stone action.</li>
         <li><b>Call for your True Name</b> in place of your favor when a Court holds <b>__Q__</b> Wisps. Highest Radiance there wins.</li>
       </ul>
     </div>
     <h4>THE GOAL</h4>
     <p>Win by holding the <b>highest Radiance</b> in the Court where a <b>True Name is Called</b>. A Call happens two ways: a Fae who completes a dance may Call in a Court holding <b>__Q__</b> or more Wisps, or a Court receiving its <b>__C__th</b> Wisp forces a Call there immediately. When a Call resolves, all Fae reveal their Court and Radiance, and the highest Radiance in the called Court wins.</p>
     <h4>WHAT YOU HOLD</h4>
-    <p>A secret <b>Court card</b> (only you know your allegiance, shown by its design and color). A <b>Radiance card</b> from 1 to 9 that faces <b>away</b> from you: the whole table sees your number except you. Two <b>Glamours</b>, which you send into the dance in your stead. Six <b>Fae Runes</b> (1\u20136) for dancing. And <b>Faerie Magik</b> cards for tricks.</p>
+    <p>A secret <b>Court card</b>: your allegiance, bearing the <b>High Fae patron</b> who supports you (each Court has one card for each of the Queen, King, Prince, and Princess). A <b>Radiance card</b> from 1 to 9 that faces <b>away</b> from you: the whole table sees your number except you. Two <b>Glamours</b>, six <b>Fae Runes</b> (1\u20136), and <b>Faerie Magik</b> cards for tricks: you begin with one; more flow from the Faerie Bridge.</p>
+    <h4>THE HIGH FAE</h4>
+    <p><b>As the very first thing on your turn</b>, before any rune, Faerie Magik, or other action, you may turn your Court card <b>face up</b> (the <b>Declare</b> button on your card). Your allegiance and patron are now public, and your patron\u2019s gift is yours for as long as the card lies face up. A declared card is never turned face down while you hold it; you cannot declare at any other moment. If a declared Court card is swapped, it remains declared for its new player. If it is discarded, the new Court card is kept face down.</p>
+    <p><b>The Queen</b>: add +2 to your Radiance at the Call, and you break any ties.<br>
+    <b>The King</b>: each turn, when you dance a Fae Rune (or dance by Midsummer Reel), you gain 1 additional step.<br>
+    <b>The Prince</b>: when you declare, place 1 Wisp in any Court. While declared, no Wisp can be lured out of your Court.<br>
+    <b>The Princess</b>: while declared, you also belong to both adjacent Courts, printed on the card (Forest: River &amp; Mountain \u00b7 River: Meadow &amp; Forest \u00b7 Mountain: Forest &amp; Meadow \u00b7 Meadow: Mountain &amp; River): you may win a Call in any of your three Courts, and you count as belonging to each.</p>
+    <p>A Patron\u2019s power only matters if it is already declared prior to the Call; if a Patron is undeclared at the Call, disregard the Patron\u2019s power.</p>
     <h4>DANCING</h4>
     <p>Play a rune and spend its number as steps. Your <b>two Glamours</b> begin beside your hand: click or tap a Glamour, then a lit stone, to move it. Split the steps as you like; unused steps are lost. When all six runes are danced they return to your hand, or sit out to reclaim them early.</p>
     <h4>RUNE POWERS</h4>
     <p><b>1</b>: you <b>must flip a stone</b> (anyone on it tumbles, including you), then dance 1 step.<br>
     <b>2</b>: you <b>must move a Conjured Stone</b> to a dance\u2019s outer end, carrying its Glamours along (waived only if no conjured stones exist), then dance 2 steps.<br>
-    <b>3</b>: 3 steps, OR <b>redraw your own Court</b> (discard it, draw fresh, look, keep secret).<br>
+    <b>3</b>: 3 steps, OR <b>redraw your own Court</b> (discard it face up, draw fresh, look, keep secret; a declared card falls face up and the new card is kept face down).<br>
     <b>4</b>: 4 steps, OR <b>blindly redraw your own Radiance</b> (a new number rivals can see but you cannot).<br>
     <b>5</b>: 5 steps, OR <b>force a rival</b> to discard their Court or their Radiance and draw a new one.<br>
-    <b>6</b>: 6 steps, OR lure a Wisp into a different Court.</p>
+    <b>6</b>: 6 steps, OR lure a Wisp into a different Court (never out of a declared Prince\u2019s Court).</p>
     <p class="small" style="color:var(--ink2);">Redraws refill from their discard piles once a deck runs dry.</p>
     <h4>CONJURED STONES</h4>
     <p>The <b>pale-glowing stones</b> are <b>Conjured</b>. Every stone has a regular and a conjured side, and the <b>Faerie Bridge</b> spiral starts full of them. <b>Moving</b> a conjured stone (the 2 rune, or a favor) carries it to the <b>outer end</b> of any dance, and any Glamours riding it travel along, unharmed, landing at that dance\u2019s start. <b>Flipping</b> a stone (the 1 rune, or a favor) turns it to its other side, and anyone standing on it <b>tumbles from the dance</b> and returns to wait beside your hand.</p>
     <h4>FINISHING A DANCE</h4>
     <p>Reach a spiral\u2019s final stone and two things happen: you unveil a <b>Will o\u2019 the Wisp</b> in any Court you like, then the High Fae grant that dance\u2019s <b>favor</b>:</p>
     <p><b>Faerie Ring</b> (Radiance favors): swap Radiance with a rival, or peek at your own.<br>
-    <b>Faerie Fort</b> (Wisp favors): lure a Wisp into a different Court, or snuff <b>two Wisps</b>, from any Courts.<br>
-    <b>Faerie Mound</b> (Court favors): swap Courts with a rival, or peek at theirs.<br>
-    <b>Faerie Bridge</b> (its own favor): gain a Faerie Magik card, then optionally move a Conjured Stone or flip a stone.</p>
-    <p>Your Glamour then returns to wait beside your hand, and it cannot rejoin the dance until the turn ends: <b>each Glamour completes at most one dance per turn</b>. Remaining steps pass to your other Glamour; if both have danced, they are lost.</p>
+    <b>Faerie Fort</b> (Wisp favors): lure a Wisp into a different Court (never out of a declared Prince\u2019s Court), or snuff <b>two Wisps</b>, from any Courts.<br>
+    <b>Faerie Mound</b> (Court favors): swap Courts with a rival (a face-up card arrives declared), or peek at theirs \u2014 learning their Court <i>and</i> their patron.<br>
+    <b>Faerie Bridge</b> (its own favor): gain a Faerie Magik card, then <b>you must</b> move a Conjured Stone or flip a stone.</p>
+    <p>Your Glamour then returns to wait beside your hand: <b>each Glamour completes at most one dance per turn</b>. Remaining steps pass to your other Glamour; if both have danced, they are lost.</p>
     <h4>THE CALL</h4>
-    <p>When a Court gathers <b>__Q__</b> Wisps, a Fae finishing a dance may spend their favor to <b>Call for their True Name</b> there. The Call pauses the dance: rivals may answer with Faerie Magik, luring or snuffing Wisps (never Blight). If the Court drops below <b>__Q__</b>, <b>the Call fades</b> and play goes on. If it holds, everyone reveals, and the highest Radiance in that Court is named. The <b>__C__th</b> Wisp placed in a Court forces an immediate Call there, whether anyone wishes it or not.</p>
+    <p>When a Court gathers <b>__Q__</b> Wisps, a Fae finishing a dance may spend their favor to <b>Call for their True Name</b> there. The Call pauses the dance: rivals may answer with Faerie Magik, luring or snuffing Wisps (never Blight). If the Court drops below <b>__Q__</b>, <b>the Call fades</b> and play goes on. If it holds, everyone reveals, and the highest Radiance in that Court is named \u2014 a declared Queen counting 2 higher and taking ties, a declared Princess eligible in all three of her Courts. The <b>__C__th</b> Wisp placed in a Court forces an immediate Call there, whether anyone wishes it or not.</p>
     <h4>FAERIE MAGIK</h4>
     <p>Play these any time on your turn; some react to others (you\u2019ll be asked). <b>Cold Iron</b> cancels another Magik, even another Cold Iron (a canceled cancel leaves the original standing). <b>Blight</b> stops a Wisp being placed. Others move Wisps, grant steps, or reveal cards; hover any card for its text.</p>
     <p>Once played, a Magik card is spent for good: it rests in the discard, and the deck is never rebuilt from those ashes; only <b>Whispered Lore</b> may pluck a single card back. <b>Cold Iron</b> is sterner still: once used, it passes out of the game entirely, beyond even Lore\u2019s reach.</p>`
@@ -4043,10 +4155,15 @@ async function ferryConjured(actor, fromTr, k, toTr){
    Court deck (reshuffling the discard when the deck runs dry), look at it, keep
    it secret. Others lose whatever they'd learned about the actor's Court. */
 function redrawCourt(actor){
-  const old=actor.house;
-  G.houseDiscard.push(old);
-  actor.house = drawFrom(G.houseDeck, G.houseDiscard);
-  log(`${fmtP(actor)} discards the ${fmtH(old)} card <b>face up</b> and draws a new Court.`, 'sys');
+  const old=actor.house, oldPt=actor.patron, wasDeclared=actor.declared;
+  G.houseDiscard.push({h:old, pt:oldPt});
+  const card = drawFrom(G.houseDeck, G.houseDiscard);
+  actor.house=card.h; actor.patron=card.pt;
+  actor.declared=false;   // the new Court card is kept face down
+  if(wasDeclared)
+    log(`${fmtP(actor)}\u2019s declared card falls: <b>${PATRON_NAME[oldPt]}</b> of the ${fmtH(old)} lies face up in the discard. The new card is kept face down.`, 'alert');
+  else
+    log(`${fmtP(actor)} discards the ${fmtH(old)} card <b>face up</b> and draws a new Court.`, 'sys');
   // Every rival's knowledge of this player's Court is now stale.
   G.players.forEach(q=>{ if(q!==actor) delete q.knownHouses[actor.i]; });
   // Their old placement pattern no longer signals their (new) allegiance.
@@ -4098,20 +4215,27 @@ async function aiFerryConjured(p, mandatory){
   // isn't one of our own near-complete lanes.
   const dests=TRACKS.filter(tr=>trackLen(tr) < SLOTS + (tr===src.tr?1:0));
   let dest=null;
-  const clean=dests.filter(tr=>!p.cands.some(c=>c.track===tr && trackLen(tr)-c.steps<=2));
-  const pool = clean.length ? clean : dests;
+  /* A stone ferried in lands at the outer end — the START — so every Glamour
+     already dancing keeps exactly the distance it had. Lengthening a dance
+     costs its current dancers nothing and taxes only whoever enters next,
+     which is why it works as defence. No need to spare my own lanes. */
+  const pool = dests;
   if(!pool.length) return;
   // Soft destination strategy: lengthen the dance whose favor is aimed at ME.
   // Weighted leanings, never absolutes — the coin still turns in the air.
   const myCourtHot = G.nobles[p.house] >= quorum()-2;                    // my Court gathers light -> tax the Mound peeks/hops and Fort snuffs
-  const myRadPrize = p.knownStatus!=null && p.knownStatus>=5;            // my (publicly visible) Radiance invites Ring muggings -> raise their price
+  const myNum = p.knownStatus!=null ? p.knownStatus : selfStatusMean(p);
+  const myRadPrize = myNum >= 6;                                        // a high Radiance invites Ring muggings -> make the Ring expensive to reach
   const wispTools=['Wisp-Call','Wisp-Lure','Snuff Out'];
-  const myKitFull  = p.intrigues.includes('Cold Iron') && p.intrigues.some(nm=>wispTools.includes(nm));  // endgame kit in hand -> freezing the card faucet favors me
+  const myKitFull  = p.intrigues.includes('Cold Iron') && p.intrigues.some(nm=>wispTools.includes(nm));
+  /* Leading? Lengthen the Bridge and shut the Magik faucet behind me: every
+     card the table draws is a card that can break my Call. */
+  const leading = pWinCall(p,p.house)>=0.5 && G.nobles[p.house]>=quorum()-2;
   const weight=tr=>{
     let w=1;
     if(myCourtHot && (tr==='Faerie Mound' || tr==='Faerie Fort')) w+=2;
-    if(myRadPrize && tr==='Faerie Ring') w+=2;
-    if(tr==='Faerie Bridge') w = myKitFull ? w+2 : w*0.6;                // default reluctance to grow the shared faucet
+    if(myRadPrize && tr==='Faerie Ring') w+=2.5;
+    if(tr==='Faerie Bridge') w = (myKitFull || leading) ? w+2.5 : w*0.6;
     return w;
   };
   let tot=0; const cum=pool.map(tr=>{ tot+=weight(tr); return tot; });
@@ -4363,7 +4487,14 @@ async function placeNoble(houseId, actor){
     return;
   }
   G.nobles[houseId]++; syncBoard();
-  if(G.placeEvidence) G.placeEvidence[actor.i][houseId]++;   // public act — everyone saw it
+  /* Public act — everyone saw it. But not every placement says the same thing:
+     a Wisp dropped into a Court that is one or two short of a Call is nearly a
+     declaration, while one laid in an empty Court could be anything. Weight the
+     evidence by how close that Court stood to the brink. */
+  if(G.placeEvidence){
+    const n=G.nobles[houseId];
+    G.placeEvidence[actor.i][houseId] += (n>=quorum()-1 ? 2.0 : n>=quorum()-2 ? 1.5 : 1.0);
+  }
   log(`${fmtP(actor)} unveils a Will o\u2019 the Wisp in the ${fmtH(houseId)} (${G.nobles[houseId]}).`);
   if(G.nobles[houseId]>=coupAt()){
     if(CALL_DEPTH>0){
@@ -4425,13 +4556,14 @@ async function kingdomAction(p, track){
  
 async function humanKingdomAction(p, track){
   const anyNobles=HOUSES.some(h=>G.nobles[h.id]>0);
+  const anyLurable=HOUSES.some(h=>G.nobles[h.id]>0 && !protectedCourt(h.id));
   const per={
     'Faerie Ring':[
       {label:'Swap your Radiance', sub:'Trade Radiance cards with a rival; you\u2019ll see what you receive.', value:'swapStatus'},
       {label:'Look at your own Radiance', sub:'Finally learn your worth.', value:'lookStatus'},
     ],
     'Faerie Fort':[
-      anyNobles && {label:'Lure a Wisp', sub:'Lure a Wisp into a different Court.', value:'swapNoble'},
+      anyLurable && {label:'Lure a Wisp', sub:'Lure a Wisp into a different Court.', value:'swapNoble'},
       anyNobles && {label:'Snuff two Wisps', sub:'Put out two Wisps, from any Courts.', value:'removeNoble'},
     ].filter(Boolean),
     'Faerie Mound':[
@@ -4461,15 +4593,23 @@ async function humanKingdomAction(p, track){
       const cv=await seatChoose(p, 'Faerie Bridge: the Call?', 'Your Court holds enough Wisps. You may Call for your True Name now, or take your stone favor instead.', callOpts);
       if(cv && cv.call) return callForThrone(cv.call, p, false);
     }
-    // Secondary: move or flip a stone (or skip).
-    const conj=conjuredList();
-    const sopts=[{label:'Flip a stone', sub:'Turn any stone conjured/regular; anyone on it tumbles.', value:'flip'}];
-    if(conj.length) sopts.push({label:'Move a Conjured Stone', sub:'Carry a conjured stone (and its Glamours) to the outer end of any dance.', value:'move'});
-    sopts.push({label:'Skip the stone action', sub:'Keep just the Magik card.', value:'skip'});
-    const sv=await seatChoose(p, 'Faerie Bridge: Stone Favor', 'You gained a Faerie Magik card. Now move or flip a stone, if you like.', sopts);
-    if(sv==='flip') await ACTIONS.flipStone(p);
-    else if(sv==='move') await ACTIONS.moveStone(p);
-    return;
+    // Secondary: the stone action is MANDATORY (v6.0) — move or flip.
+    while(!G.over){
+      if(seatClockExpired(p)) return;              // the clock lapses the favor, never loops
+      const conj=conjuredList();
+      const sopts=[{label:'Flip a stone', sub:'Turn any stone conjured/regular; anyone on it tumbles.', value:'flip'}];
+      if(conj.length) sopts.push({label:'Move a Conjured Stone', sub:'Carry a conjured stone (and its Glamours) to the outer end of any dance.', value:'move'});
+      const sv=await seatChoose(p, 'Faerie Bridge: Stone Favor', 'You gained a Faerie Magik card. You must now move or flip a stone.', sopts);
+      if(sv==null) return;                         // expired/cancelled prompt — the favor lapses
+      if(sv==='flip'){
+        const before=G.steps;                      // flipStone returns silently on cancel; re-offer
+        const picked=await ACTIONS.flipStone(p);
+        if(picked!==false) return;
+      } else if(sv==='move'){
+        const moved=await ACTIONS.moveStone(p);
+        if(moved!==false) return;
+      }
+    }
   }
 
   const opts=[...per[track]];
@@ -4509,7 +4649,15 @@ const ACTIONS={
     const t=p.isHuman? await choosePlayer(p,'Swap Radiance','You will receive their visible Radiance; they receive yours.') : p._target;
     if(!t) return;   // expired/failed choice — the favor lapses
     const a=p.status, b=t.status;
+    /* A swap hands BOTH sides certainty: each takes a card they could already
+       see. And every Fae watching learns something too — the trade went to
+       someone else, so their own hidden number was not the tallest on offer. */
     p.status=b; t.status=a; p.knownStatus=b; t.knownStatus=a;
+    G.players.forEach(q=>{
+      if(q===p || q===t || q.knownStatus!==null) return;
+      q._passedOver=(q._passedOver||0)+1;
+      q._selfCeil = q._selfCeil==null ? b : Math.min(q._selfCeil, b);
+    });
     log(`${fmtP(p)} swaps Radiance with ${fmtP(t)}.`);
     logTo(p, `Your Radiance is now <b>${b}</b>.`, 'sys');
     logTo(t, `Your Radiance is now <b>${a}</b>.`, 'sys');
@@ -4528,11 +4676,15 @@ const ACTIONS={
   async swapNoble(p){
     let from,to;
     if(p.isHuman){
-      from=await chooseHouseFrom(p,'Lure a Wisp: from','Draw a Wisp out of…', h=>G.nobles[h.id]>0);
+      from=await chooseHouseFrom(p,'Lure a Wisp: from','Draw a Wisp out of… (a declared Prince’s Court cannot be lured from)', h=>G.nobles[h.id]>0 && !protectedCourt(h.id));
       if(from==null) return;   // expired/failed choice — the favor lapses
       to=await chooseHouseFrom(p,'Lure a Wisp: into','…and let it settle in:', h=>h.id!==from);
       if(to==null) return;
     } else { from=p._from; to=p._to; }
+    if(from==null || protectedCourt(from)){
+      log(`The lure breaks against the Prince\u2019s protection; no Wisp is drawn out.`, 'sys');
+      return;
+    }
     G.nobles[from]--; log(`${fmtP(p)} lures a Wisp away from the ${fmtH(from)}…`);
     await placeNoble(to,p);
   },
@@ -4563,37 +4715,63 @@ const ACTIONS={
     log(`${fmtP(p)} snuffs out a second Wisp, of the ${fmtH(second)} (${G.nobles[second]}).`);
   },
   async swapHouse(p){
-    const t=p.isHuman? await choosePlayer(p,'Swap Court','Trade Court cards. Both of you will see your new Court.') : p._target;
+    const t=p.isHuman? await choosePlayer(p,'Swap Court','Trade Court cards. Both of you will see your new Court. A face-up card arrives declared.') : p._target;
     if(!t) return;   // expired/failed choice — the favor lapses
     const a=p.house, b=t.house;
+    const aPt=p.patron, bPt=t.patron, aDec=p.declared, bDec=t.declared;
     p.house=b; t.house=a;
+    p.patron=bPt; t.patron=aPt;              // the patron is printed on the card
+    p.declared=bDec; t.declared=aDec;        // a declared card remains declared for its new player
     p.knownHouses[t.i]=a; t.knownHouses[p.i]=b;
-    logTo(p, `You now belong to the ${fmtH(b)}.`, 'sys');
-    logTo(t, `You now belong to the ${fmtH(a)}.`, 'sys');
-    G.players.forEach(q=>{ if(q!==p&&q!==t){ delete q.knownHouses[p.i]; delete q.knownHouses[t.i]; }});
+    p.knownPatrons[t.i]=aPt; t.knownPatrons[p.i]=bPt;
+    logTo(p, `You now belong to the ${fmtH(b)}; ${PATRON_NAME[bPt]} supports you${bDec?' (the card arrives <b>declared</b>)':''}.`, 'sys');
+    logTo(t, `You now belong to the ${fmtH(a)}; ${PATRON_NAME[aPt]} supports you${aDec?' (the card arrives <b>declared</b>)':''}.`, 'sys');
+    if(aDec||bDec) log(`A declared card changes hands: it remains declared for its new holder.`, 'sys');
+    /* A swap is a public act: every Fae saw who traded with whom. So knowledge
+       does not vanish here, it CHANGES HANDS. Whoever knew p held the Meadow
+       now knows t holds the Meadow — and, just as importantly, the trail of
+       Wisps a player laid describes the CARD, not the player, so that trail
+       follows the card to its new owner. This is the inference a human makes
+       without thinking: "they kept feeding the Meadow, and you just swapped
+       with them, so you are the Meadow now." */
+    G.players.forEach(q=>{
+      if(q===p||q===t) return;
+      const kp=q.knownHouses[p.i], kt=q.knownHouses[t.i];
+      if(kt!==undefined) q.knownHouses[p.i]=kt; else delete q.knownHouses[p.i];
+      if(kp!==undefined) q.knownHouses[t.i]=kp; else delete q.knownHouses[t.i];
+    });
     if(G.placeEvidence){
-      G.placeEvidence[p.i]={mountain:0,meadow:0,forest:0,river:0};
-      G.placeEvidence[t.i]={mountain:0,meadow:0,forest:0,river:0};
+      const ev=G.placeEvidence[p.i];
+      G.placeEvidence[p.i]=G.placeEvidence[t.i];
+      G.placeEvidence[t.i]=ev;
     }
     log(`${fmtP(p)} swaps Courts with ${fmtP(t)}.`);
-    await seatNotice(p, 'Court swapped', `You now belong to the <b>${HOUSE_BY_ID[b].name}</b>. ${t.name} took your old card.`);
-    renderHUD();
+    await seatNotice(p, 'Court swapped', `You now belong to the <b>${HOUSE_BY_ID[p.house].name}</b>, favored by <b>${PATRON_NAME[p.patron]}</b>${p.declared?' \u2014 the card arrived <b>declared</b>, and its gift is yours':''}. ${t.name} took your old card.`);
+    renderHUD(); syncBoard();
+  },
+  /* ---- what each favor announces beneath its Fae ---- */
+  _flash: {
+    swapStatus:'swaps Radiance',   lookStatus:'reads their Radiance',
+    swapNoble:'lures a Wisp',      removeNoble:'snuffs Wisps',
+    swapHouse:'swaps Courts',      lookHouse:'peeks at a Court',
+    flipStone:'flips a stone',     moveStone:'moves a stone'
   },
   async lookHouse(p){
-    const t=p.isHuman? await choosePlayer(p,'Look at a Court','Secretly learn which Court a rival belongs to.') : p._target;
+    const t=p.isHuman? await choosePlayer(p,'Look at a Court','Secretly learn a rival\u2019s Court, and the patron who supports them.') : p._target;
     if(!t) return;   // expired/failed choice — the favor lapses
     p.knownHouses[t.i]=t.house;
+    p.knownPatrons[t.i]=t.patron;
     log(`${fmtP(p)} peeks at ${fmtP(t)}\u2019s Court card.`);
-    logTo(p, `You peek: ${fmtP(t)} belongs to the ${fmtH(t.house)}.`, 'sys');
+    logTo(p, `You peek: ${fmtP(t)} belongs to the ${fmtH(t.house)}, and ${PATRON_NAME[t.patron]} supports them.`, 'sys');
     if(p.isHuman){
-      await seatNotice(p, 'Allegiance glimpsed', `${t.name} belongs to the <b>${HOUSE_BY_ID[t.house].name}</b>. The card turns facedown again: hold it in memory.`);
+      await seatNotice(p, 'Allegiance glimpsed', `${t.name} belongs to the <b>${HOUSE_BY_ID[t.house].name}</b>, and <b>${PATRON_NAME[t.patron]}</b> supports them. The card turns facedown again: hold it in memory.`);
     }
     renderHUD();
   },
   async flipStone(p){
     if(p.isHuman){
        const pick = await seatPickStone(p, 'Click any stone to flip it (Regular ↔ Conjured)', ud => true);
-       if(!pick) return; // cancelled — no flip taken
+       if(!pick) return false; // cancelled — no flip taken
 
        const st = G.steps[pick.tr][pick.k-1];
        st.c = !st.c;
@@ -4619,11 +4797,11 @@ const ACTIONS={
   async moveStone(p){
     if(p.isHuman){
        const conj = conjuredList();
-       if(!conj.length) { await seatNotice(p, 'Move Stone', 'No conjured stones to move!'); return; }
+       if(!conj.length) { await seatNotice(p, 'Move Stone', 'No conjured stones to move!'); return false; }
        
        while(true){
            const srcPick = await seatPickStone(p, "Click a <b>glowing Conjured Stone</b> to move", ud => G.steps[ud.track][ud.step-1].c);
-           if(!srcPick) return;
+           if(!srcPick) return false;
 
            const destPick = await seatPickDest(p, srcPick.tr);
            if(!destPick) continue;
@@ -4636,6 +4814,16 @@ const ACTIONS={
     }
   }
 };
+/* Each favor announces itself beneath the Fae who took it. Wrapped in one
+   place so a new favor cannot be added and silently forget to speak. */
+Object.keys(ACTIONS._flash).forEach(k=>{
+  const fn=ACTIONS[k], say=ACTIONS._flash[k];
+  ACTIONS[k]=async function(p, ...rest){
+    const out=await fn.call(ACTIONS, p, ...rest);
+    try{ standFlash(p, say); }catch(e){}
+    return out;
+  };
+});
  
 /* ============================================================
    Part D: Intrigues & reaction windows
@@ -4721,10 +4909,25 @@ async function breachWindow(p, name){
             harm=0.85;                                                        // draining the Court that arms MY Call
           if(name==='Wisp-Call' && p.status>=7)                               // a strong rival arming some Call
             harm=Math.max(harm, HOUSES.some(h=>G.nobles[h.id]>=quorum()-1 && pWinCall(q,h.id)<0.3) ? 0.5 : 0.15);
+          /* An immediate loss outranks every later worry. If this card would
+             force the Call at the ceiling, or arm a Court where q cannot win,
+             the iron goes in — never mind which rival profits two turns hence.
+             A certain defeat now is worse than a likely one later. */
+          if(name==='Wisp-Call' || name==='Wisp-Lure'){
+            const dest = (name==='Wisp-Lure') ? p._to : p.house;
+            if(dest && dest!==q.house){
+              const after = G.nobles[dest]+1;
+              if(after>=coupAt()) harm=0.95;                                   // forces the Call at once
+              else if(after>=quorum() && pWinCall(q,dest)<0.3) harm=Math.max(harm,0.9);
+            }
+          }
           cancels = Math.random() < harm;
         }
       }
       if(cancels){
+        /* Someone had iron and spent it. Whoever was countered now knows the
+           table can still fight, and should be slower to stake a Call on it. */
+        p._counteredOn = G.round;
         takeIntrigue(q,'Cold Iron');
         log(`${fmtP(q)} plays <b>Cold Iron</b>: ${fmtP(p)}\u2019s ${name} is undone. The cold iron is spent, gone from the game.`, 'alert');
         renderHUD();
@@ -4783,8 +4986,12 @@ async function plagueWindow(actor){
  
 async function playActiveIntrigue(p, name){
   if(!INTRIGUE_DEFS[name] || !p.intrigues.includes(name)) return 0;   // never resolve a card not truly held
-  if((name==='Snuff Out'||name==='Wisp-Lure') && !HOUSES.some(h=>G.nobles[h.id]>0)){
+  if(name==='Snuff Out' && !HOUSES.some(h=>G.nobles[h.id]>0)){
     await seatNotice(p, name, 'There are no Wisps on the board; the Magik would fizzle. The card stays in your hand.');
+    return 0;
+  }
+  if(name==='Wisp-Lure' && !HOUSES.some(h=>G.nobles[h.id]>0 && !protectedCourt(h.id))){
+    await seatNotice(p, name, 'No Wisp can be lured: none are on the board, or the Prince guards them. The card stays in your hand.');
     return 0;
   }
   takeIntrigue(p, name);
@@ -4795,11 +5002,42 @@ async function playActiveIntrigue(p, name){
   let pts=0;
   switch(name){
     case 'Bountiful Harvest': pts=3; break;
-    case 'Scrying Pool':
-      p.knownStatus=p.status;
-      logTo(p, `The scrying pool shows your Radiance: it is <b>${p.status}</b>.`, 'sys');
-      await seatNotice(p, 'Scrying Pool', `The still water shows it: your Radiance is <b>${p.status}</b>. Hold it in memory: the water will not show it twice.`);
+    case 'Scrying Pool': {
+      let mode, target=null;
+      if(p.isHuman){
+        mode=await seatChoose(p, 'Scrying Pool', 'What does the still water show?', [
+          {label:'Your own Radiance', sub:'Learn your number at last.', value:'self'},
+          {label:'A rival’s Court card', sub:'See their Court, and the patron who supports them.', value:'court'},
+        ]);
+        if(mode==null) mode='self';   // an expired choice defaults to the gentler gaze
+        if(mode==='court'){
+          target=await choosePlayer(p, 'Scrying Pool', 'Whose Court does the water show?');
+          if(!target) mode='self';
+        }
+      } else {
+        mode = p._scry || (p.knownStatus===null ? 'self' : 'court');
+        delete p._scry;
+        if(mode==='court'){
+          target = p._scryTarget ||
+            others(p).filter(o=>!o.declared && p.knownHouses[o.i]==null)
+                     .sort((a,b)=>b.status-a.status)[0] || null;
+          delete p._scryTarget;
+          if(!target) mode='self';
+        }
+      }
+      if(mode==='court'){
+        p.knownHouses[target.i]=target.house;
+        p.knownPatrons[target.i]=target.patron;
+        log(`${fmtP(p)} gazes into the pool at ${fmtP(target)}’s Court.`);
+        logTo(p, `The pool shows ${fmtP(target)}’s card: the ${fmtH(target.house)}, and ${PATRON_NAME[target.patron]} supports them.`, 'sys');
+        if(p.isHuman) await seatNotice(p, 'Scrying Pool', `The water stills: ${target.name} belongs to the <b>${HOUSE_BY_ID[target.house].name}</b>, and <b>${PATRON_NAME[target.patron]}</b> supports them. The card turns facedown again: hold it in memory.`);
+      } else {
+        p.knownStatus=p.status;
+        logTo(p, `The scrying pool shows your Radiance: it is <b>${p.status}</b>.`, 'sys');
+        await seatNotice(p, 'Scrying Pool', `The still water shows it: your Radiance is <b>${p.status}</b>. Hold it in memory: the water will not show it twice.`);
+      }
       break;
+    }
     case 'Whispered Lore': {
       const uniq=[...new Set(G.intrigueDiscard)];
       if(!uniq.length){ await seatNotice(p, 'Whispered Lore','The lore is silent; no Magik has been discarded yet.'); break; }
@@ -4814,10 +5052,11 @@ async function playActiveIntrigue(p, name){
     case 'Wisp-Lure': {
       let from,to;
       if(p.isHuman){
-        from=await chooseHouseFrom(p,'Wisp-Lure: from','Lure a Wisp out of…', h=>G.nobles[h.id]>0);
+        from=await chooseHouseFrom(p,'Wisp-Lure: from','Lure a Wisp out of… (a declared Prince’s Court cannot be lured from)', h=>G.nobles[h.id]>0 && !protectedCourt(h.id));
         to=await chooseHouseFrom(p,'Wisp-Lure: into','…and let it drift into:', h=>h.id!==from);
       } else { from=p._from; to=p._to; }
-      if(from==null || to==null){   // expired/failed choice — the Magik fizzles into the discard
+      if(from==null || to==null || protectedCourt(from)){   // expired, failed, or Prince-protected — the Magik fizzles into the discard
+        if(from!=null && protectedCourt(from)) log(`The lure breaks against the Prince\u2019s protection.`, 'sys');
         G.intrigueDiscard.push(name); renderHUD();
         return 0;
       }
@@ -4870,7 +5109,7 @@ async function callWindow(caller, houseId, need){
         if(q.intrigues.includes('Snuff Out') && Math.random()<.85){
           q._from=houseId;
           await playActiveIntrigue(q,'Snuff Out');
-        } else if(q.intrigues.includes('Wisp-Lure') && Math.random()<.7){
+        } else if(q.intrigues.includes('Wisp-Lure') && Math.random()<.7 && !protectedCourt(houseId)){
           q._from=houseId;
           q._to = (q.house!==houseId && G.nobles[q.house]+1<coupAt() && !knownStrongerShares(q)) ? q.house
                   : pick(HOUSES.filter(h=>h.id!==houseId)).id;
@@ -4906,7 +5145,7 @@ async function callForThroneInner(houseId, caller, isCoup){
     syncBoard(); renderHUD();
     return;   // canceled — the dance goes on
   }
-  if(isCoup && !G.players.some(p=>p.house===houseId)){
+  if(isCoup && !G.players.some(p=>belongsToCourt(p, houseId))){
     G.nobles[houseId] = quorum()-1;
     log(`No Fae belongs to the ${fmtH(houseId)}: the Call finds no one, and <b>the gathered light scatters</b> (${quorum()-1} Wisps remain).`, 'alert');
     banner('THE CALL FADES');
@@ -4916,9 +5155,24 @@ async function callForThroneInner(houseId, caller, isCoup){
   G.over=true;
   SCENE.callCrown();
   await wait(1800);
-  const contenders=G.players.filter(p=>p.house===houseId);
+  /* The High Fae attend the Call: a declared Queen counts 1 higher and takes
+     ties; a declared Princess belongs to both her Courts. Only patrons
+     declared before the Call was announced count. */
+  const contenders=G.players.filter(p=>belongsToCourt(p, houseId));
   let winner=null;
-  contenders.forEach(p=>{ if(!winner||p.status>winner.status) winner=p; });
+  contenders.forEach(p=>{
+    if(!winner){ winner=p; return; }
+    const a=effRad(p), b=effRad(winner);
+    if(a>b || (a===b && p.declared && p.patron==='queen')) winner=p;
+  });
+  G._winner = winner ? {seat:winner.i, patron:winner.patron, declared:!!winner.declared,
+    house:winner.house, status:winner.status, viaPrincess:winner.house!==houseId,
+    patronDecisive: contenders.some(c=>c!==winner && c.status>=winner.status)} : null;
+  if(winner && winner.declared && winner.patron==='queen' &&
+     contenders.some(c=>c!==winner && c.status>=winner.status))
+    log(`The Queen\u2019s light crowns ${fmtP(winner)}: her gift carries the Call.`, 'alert');
+  if(winner && winner.declared && winner.patron==='princess' && winner.house!==houseId)
+    log(`The Princess\u2019s support reaches across the Courts: ${fmtP(winner)} wins from the ${fmtH(winner.house)}.`, 'alert');
   const trueName = winner ? bestowTrueName(houseId) : null;
   if(winner) log(`The High Fae whisper ${fmtP(winner)}\u2019s True Name: <b>${trueName}</b>.`, 'alert');
   const bestowal = winner
@@ -4927,14 +5181,16 @@ async function callForThroneInner(houseId, caller, isCoup){
   $('#revsub').innerHTML = bestowal + `${isCoup?'The Court could hold no more: a True Name is forced':'A True Name is called'} in the <b style="color:${HOUSE_BY_ID[houseId].css}">${HOUSE_BY_ID[houseId].name}</b>. All Courts and Radiance are revealed.` +
     (winner? '' : '<br><b>No Fae belonged to this Court: no True Name is granted.</b>');
   const rows=$('#revrows'); rows.innerHTML='';
-  [...G.players].sort((a,b)=>b.status-a.status).forEach(p=>{
+  [...G.players].sort((a,b)=>effRad(b)-effRad(a)).forEach(p=>{
     const h=HOUSE_BY_ID[p.house];
+    const pt=PATRON_NAME[p.patron]||'';
+    const eff=effRad(p);
     const r=document.createElement('div');
     r.className='revrow'+(p===winner?' winner':'');
     r.innerHTML=`<span class="crownmark">${p===winner?'\u2726':''}</span>
-      <span class="nm"><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${p.color};margin-right:6px"></span>${p.name}</span>
+      <span class="nm"><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${p.color};margin-right:6px"></span>${p.name}<br><span style="font-size:10px; color:${p.declared?'var(--gold)':'var(--ink2)'}; letter-spacing:.04em;">${pt}${p.declared?' \u00b7 DECLARED':''}</span></span>
       <span class="chip cbg cbg-${p.house}" style="background-color:${h.css}; background-size:26px; background-position:right 6px center; padding-right:34px;">${h.name.toUpperCase()}</span>
-      <span class="st">${p.status}</span>`;
+      <span class="st">${p.status}${eff!==p.status?`<span style="font-size:11px; color:var(--gold);">+${eff-p.status}</span>`:''}</span>`;
     rows.appendChild(r);
   });
   $('#revtitle').textContent = winner ? (winner.isHuman? 'YOU JOIN THE HIGH FAE' : `${winner.name.toUpperCase()} JOINS THE HIGH FAE`) : 'NO TRUE NAME IS GRANTED';
@@ -4978,12 +5234,35 @@ async function callForThroneInner(houseId, caller, isCoup){
 /* ============================================================
    Part D3: turns — human & AI
    ============================================================ */
+/* ---------- DECLARE YOUR PATRON ----------
+   The very first thing on a turn, before any rune, Magik, or other action.
+   Public, permanent while the card is held; the Prince's Wisp follows all
+   normal placement rules (reaction window, and it can force a Call). */
+async function doDeclare(p){
+  p.declared=true;
+  log(`${fmtP(p)} <b>declare${p.name==='You'?'':'s'}</b>: ${fmtPatron(p)} supports ${p.name==='You'?'you':'them'}!`, 'alert');
+  banner(`${p.i===MY_SEAT?'YOU DECLARE':p.name.toUpperCase()+' DECLARES'}`);
+  renderHUD(); syncBoard();
+  if(p.patron==='prince'){
+    const h=await pickHouseForNoble(p);
+    await placeNoble(h, p);
+    renderHUD(); syncBoard();
+  }
+}
 async function humanTurn(p){
   banner(p.i===MY_SEAT ? 'Your turn' : `${p.name}’s turn`);
+  let acted=false;   // declaring is legal only before the turn's first action
   while(true){
-    const ev=await seatArm(p, ['honor','skip','intrigue']);
+    const kinds = (!acted && !p.declared) ? ['honor','skip','intrigue','declare'] : ['honor','skip','intrigue'];
+    const ev=await seatArm(p, kinds);
+    if(ev.type==='declare'){
+      if(!acted && !p.declared){ await doDeclare(p); }
+      if(G.over) return;
+      continue;
+    }
     if(ev.type==='end') return;   // force-released (e.g. tutorial Continue) — bail out entirely
     if(ev.type==='skip'){
+      acted=true;
       p.hand.push(...p.discard.splice(0)); p.hand.sort((a,b)=>a-b);
       log(`${fmtP(p)} sits out the dance and reclaims their discards.`);
       renderHUD(); return;
@@ -5014,6 +5293,7 @@ async function humanTurn(p){
           }
           if(reelFerry==='cancel') continue;   // backed out — Reel stays in hand
         }
+        acted=true;
         takeIntrigue(p,'Midsummer Reel');
         log(`${fmtP(p)} plays <b>Midsummer Reel</b> in place of a Fae Rune (${amt}).`);
         renderHUD();
@@ -5075,12 +5355,12 @@ async function humanTurn(p){
               break;
             }
           }
-          if(amt===6 && HOUSES.some(h=>G.nobles[h.id]>0)){
+          if(amt===6 && HOUSES.some(h=>G.nobles[h.id]>0 && !protectedCourt(h.id))){
             const c6=await seatChoose(p, 'The Reel\u2019s Gift (6)','Dance 6 steps, or spend the Reel to lure a Wisp between Courts.',
               [{label:'Dance 6 steps', value:'dance'},
                {label:'Lure a Wisp', sub:'Move one Wisp from any Court into another.', value:'lure'}]);
             if(c6==='lure'){
-              const from=await chooseHouseFrom(p,'Lure: from','Draw a Wisp out of…', h=>G.nobles[h.id]>0);
+              const from=await chooseHouseFrom(p,'Lure: from','Draw a Wisp out of…', h=>G.nobles[h.id]>0 && !protectedCourt(h.id));
               if(from==null) break;   // expired/failed choice — the Reel is spent, the lure fizzles
               const to=await chooseHouseFrom(p,'Lure: into','…and let it settle in:', h=>h.id!==from);
               if(to==null) break;
@@ -5090,10 +5370,11 @@ async function humanTurn(p){
               break;
             }
           }
-          await allocate(p,p,amt);
+          await allocate(p,p,amt+kingBonus(p));
         }
         break;
       }
+      acted=true;
       const pts=await playActiveIntrigue(p, ev.name);
       if(pts>0) await allocate(p,p,pts);
       continue;
@@ -5128,7 +5409,7 @@ async function humanTurn(p){
         if(c===null) continue;
         orChoice=c;
       } else if(powers && v===6){
-        const anyW=HOUSES.some(h=>G.nobles[h.id]>0);
+        const anyW=HOUSES.some(h=>G.nobles[h.id]>0 && !protectedCourt(h.id));
         const c=await seatChoose(p, 'The Sixth Rune',
           'Move 6, or instead lure a Will o\u2019 the Wisp into a different Court.',
           [{label:'Move 6', value:'dance'}]
@@ -5166,6 +5447,7 @@ async function humanTurn(p){
         // If no conjured stones exist, the move requirement is waived — just dance 2.
       }
       // ----- Commit: spend the card -----
+      acted=true;
       p.hand.splice(p.hand.indexOf(v),1); p.discard.push(v);
       renderHUD();
       // ----- Resolve OR-effects that replace dancing -----
@@ -5211,7 +5493,7 @@ async function humanTurn(p){
       }
       if(orChoice==='lure'){
         log(`${fmtP(p)} spends the <b>6</b> rune as a lure.`);
-        const from=await chooseHouseFrom(p,'Lure: from','Draw a Wisp out of…', h=>G.nobles[h.id]>0);
+        const from=await chooseHouseFrom(p,'Lure: from','Draw a Wisp out of…', h=>G.nobles[h.id]>0 && !protectedCourt(h.id));
         if(from==null) break;   // expired/failed choice — the rune is spent, the lure fizzles
         const to=await chooseHouseFrom(p,'Lure: into','…and let it settle in:', h=>h.id!==from);
         if(to==null) break;
@@ -5223,7 +5505,7 @@ async function humanTurn(p){
         break;
       }
       // ----- Otherwise: dance the steps (after resolving the mandatory 1/2 stone action) -----
-      log(`${fmtP(p)} dances a <b>${v}</b>.`);
+      log(`${fmtP(p)} dances a <b>${v}</b>${kingBonus(p)?' (the King grants +1 step)':''}.`);
       renderHUD();
       if(v===1 && flipPick){
         const st=G.steps[flipPick.tr][flipPick.k-1];
@@ -5236,7 +5518,7 @@ async function humanTurn(p){
       if(v===2 && ferry && ferry.src){
         await ferryConjured(p, ferry.src.tr, ferry.src.k, ferry.dest.tr);
       }
-      await allocate(p,p,v);
+      await allocate(p,p,v+kingBonus(p));
       if(!p.hand.length){
         p.hand.push(...p.discard.splice(0)); p.hand.sort((a,b)=>a-b);
         log(`${fmtP(p)} has danced their whole Fae Rune hand; all discards return.`, 'sys');
@@ -5275,6 +5557,7 @@ function maxVisible(p){ return Math.max(...others(p).map(o=>o.status)); }
    deck composition (16 cards, minus p's own, minus known others) and
    public placement behavior (players tend to feed their own Court). */
 function courtBeliefs(p, o){
+  if(o.declared){ const w={}; HOUSES.forEach(h=>w[h.id]= h.id===o.house?1:0); return w; }
   const kn=p.knownHouses[o.i];
   if(kn){ const w={}; HOUSES.forEach(h=>w[h.id]= h.id===kn?1:0); return w; }
   const counts={mountain:4,meadow:4,forest:4,river:4};
@@ -5286,11 +5569,15 @@ function courtBeliefs(p, o){
      two, but three or more into one Court is too expensive to fake. So the
      1st placement is weak evidence, the 2nd moderate, the 3rd+ near-decisive. */
   const EV_CURVE=[0, 0.5, 1.6, 7.0];
+  const evidence=e=>{                       // weights are fractional now: interpolate
+    if(e<=0) return 0;
+    if(e>=3) return EV_CURVE[3] + 3.0*(e-3);
+    const i=Math.floor(e);
+    return EV_CURVE[i] + (EV_CURVE[i+1]-EV_CURVE[i])*(e-i);
+  };
   HOUSES.forEach(h=>{
     const base=Math.max(0.05, counts[h.id]);
-    const e=ev[h.id]||0;
-    const evid = e<EV_CURVE.length ? EV_CURVE[e] : EV_CURVE[3] + 3.0*(e-3);
-    w[h.id]=base*(1+evid); tot+=w[h.id];
+    w[h.id]=base*(1+evidence(ev[h.id]||0)); tot+=w[h.id];
   });
   HOUSES.forEach(h=>w[h.id]/=tot);
   return w;
@@ -5302,7 +5589,20 @@ function pInCourt(p,o,H){ return courtBeliefs(p,o)[H]||0; }
 function selfStatusDist(p){
   if(p.knownStatus!==null) return [{v:p.knownStatus,w:1}];
   const u=unseenStatuses(p);
-  return u.map(v=>({v,w:1/u.length}));
+  /* Nobody has come to take my number. Rivals trade toward the tallest card
+     they can see, so every Ring swap that chose somebody else is quiet
+     evidence that mine was not the prize — and the more often the cup passes
+     me by, the lower I should believe I am. A card worth stealing gets stolen,
+     and the theft would have told me what I hold. */
+    const ceil=p._selfCeil, passes=p._passedOver||0;
+  const arr=u.map(v=>{
+    let w=1;
+    if(ceil!=null && v>ceil) w*=0.45;                       // they took a smaller number than this
+    if(passes) w*=Math.pow(0.86, passes*Math.max(0, v-4));  // repeatedly overlooked
+    return {v,w};
+  });
+  const tot=arr.reduce((a,b)=>a+b.w,0)||1;
+  return arr.map(o=>({v:o.v, w:o.w/tot}));
 }
 function selfStatusMean(p){ return selfStatusDist(p).reduce((a,x)=>a+x.v*x.w,0); }
 
@@ -5313,13 +5613,23 @@ function selfStatusMean(p){ return selfStatusDist(p).reduce((a,x)=>a+x.v*x.w,0);
 function pWinCall(p, H, opts){
   opts=opts||{};
   const myHouse = opts.house || p.house;
-  if(myHouse!==H) return 0;
+  const eligible = myHouse===H || (p.declared && p.patron==='princess' &&
+    (PRINCESS_NEXT[p.house]===H || PRINCESS_PREV[p.house]===H));
+  if(!eligible) return 0;
+  const meQueen = p.declared && p.patron==='queen';
   let pw=0;
   selfStatusDist(p).forEach(({v,w})=>{
+    const myEff = v + (meQueen?2:0);
     let q=1;
     others(p).forEach(o=>{
-      if(o.status<=v) return;                    // can't beat me
-      const pi = (opts.assumeNot===o) ? 0 : pInCourt(p,o,H);
+      const oEff = effRad(o);
+      const oQueen = o.declared && o.patron==='queen';
+      const beats = oEff>myEff || (oEff===myEff && oQueen && !meQueen);
+      if(!beats) return;                         // can't beat me
+      let pi;
+      if(opts.assumeNot===o) pi=0;
+      else if(o.declared) pi = belongsToCourt(o,H) ? 1 : 0;
+      else pi = pInCourt(p,o,H);
       q*=(1-pi);
     });
     pw+=w*q;
@@ -5330,24 +5640,42 @@ function pWinCall(p, H, opts){
 function rivalThreatIn(p,H){
   let t=0;
   others(p).forEach(o=>{
-    const pi=pInCourt(p,o,H);
-    if(pi>0.28) t=Math.max(t, o.status*Math.min(1, pi*1.5));
+    const pi = o.declared ? (belongsToCourt(o,H)?1:0) : pInCourt(p,o,H);
+    if(pi>0.28) t=Math.max(t, effRad(o)*Math.min(1, pi*1.5));
   });
   return t;
 }
 /* Is a known (peeked) rival with a stronger number sharing my Court? */
 function knownStrongerShares(p){
-  const m=selfStatusMean(p);
-  return others(p).some(o=>p.knownHouses[o.i]===p.house && o.status>m+0.5);
+  const m=selfStatusMean(p) + ((p.declared && p.patron==='queen')?1:0);
+  return others(p).some(o=>{
+    const inMine = o.declared ? belongsToCourt(o, p.house) : p.knownHouses[o.i]===p.house;
+    return inMine && effRad(o)>m+0.5;
+  });
 }
 /* "Am I building toward a winnable Call in my own Court?" */
 function wantsWin(p){ return pWinCall(p, p.house) >= 0.45; }
 
 /* Which dance's FAVOR do I most need right now? */
 function preferredTrack(p){
+  /* The opening depends on how many Fae are dancing. At a large table the
+     visible leader is hunted by everyone, so trade toward the second best
+     instead; at four, build the Magik engine. (A three-handed scouting
+     opening was tried and measured worse than the tuned chain below.) */
+  {
+    const placed=HOUSES.reduce((a,h)=>a+G.nobles[h.id],0);
+    if(placed<=2){
+      const nP=G.players.length;
+      if(nP>=5 && Math.random()<0.6) return 'Faerie Ring';
+      if(nP===4 && TRACKS.includes('Faerie Bridge') && trackLen('Faerie Bridge')>0
+         && Math.random()<0.55) return 'Faerie Bridge';
+    }
+  }
   // Bridge-aware valuation (validated by head-to-head simulation): the Bridge
   // is a real resource, favored when card-poor, sometimes crossed regardless.
-  if(p.knownStatus===null && Math.random()<.5) return 'Faerie Ring';
+  /* Not worth a dance just to read my own number: a swap would tell me anyway
+     while also handing me a better card, and being passed over tells me nearly
+     as much for free. Courts are the knowledge that has to be gone and got. */
   if(TRACKS.includes('Faerie Bridge') && trackLen('Faerie Bridge')>0){
     if(p.intrigues.length<2 && Math.random()<.55) return 'Faerie Bridge';
     if(Math.random()<.2) return 'Faerie Bridge';
@@ -5361,10 +5689,26 @@ function preferredTrack(p){
     if(danger && Math.random()<.45) return 'Faerie Fort';
     if(boardHeat(p)>=.5 && Math.random()<.2) return 'Faerie Fort';
   }
-  if(p.knownStatus===null) return 'Faerie Ring';           // self-knowledge first
-  const unknownStrong=others(p).filter(o=>!p.knownHouses[o.i] && o.status>=p.knownStatus);
+  if(p.knownStatus===null &&
+     (!others(p).some(o=>!p.knownHouses[o.i]) || (G.players.length<=3 && Math.random()<0.5)))
+    return 'Faerie Ring';        // nothing left to learn but my own number (or a small table, where the Ring is cheap)
+  /* Table size decides which currency wins. At three Fae a player sits ALONE
+     in their Court about five games in eight, so the number hardly matters and
+     the Courts are solvable: learn them. At six, being alone is rare and almost
+     every Call is decided by whose Radiance is highest in a shared Court, so
+     the number is the win condition and the Courts are barely knowable. */
+  const nP=G.players.length;
+  /* Table size genuinely changes human strategy here — a player sits ALONE in
+     their Court about five games in eight at three Fae, and barely one in four
+     at six, so Courts decide small tables and Radiance decides crowded ones.
+     Re-weighting scouting and trading along that axis was tried in both
+     directions and measured WORSE at both extremes: this chain already leans
+     the right way, because the number of unknown rivals and the visible
+     Radiance spread it reads from both scale with the table by themselves. */
+  const myNum = p.knownStatus!=null ? p.knownStatus : selfStatusMean(p);
+  const unknownStrong=others(p).filter(o=>!p.knownHouses[o.i] && o.status>=myNum);
   if(unknownStrong.length && Math.random()<.75) return 'Faerie Mound'; // scout the threats
-  if(p.knownStatus<maxVisible(p) && Math.random()<.6) return 'Faerie Ring'; // trade up
+  if(myNum<maxVisible(p) && Math.random()<.6) return 'Faerie Ring';        // trade up
   if(TRACKS.includes('Faerie Bridge') && p.intrigues.length===0 && Math.random()<.45) return 'Faerie Bridge';
   return 'Faerie Fort';                                     // wisp economy
 }
@@ -5406,7 +5750,10 @@ function aiPickHouse(p){
   if(p._burst && HOUSE_BY_ID[p._burst]) return p._burst;   // mid-stack: every Wisp goes home
   const q=quorum(), coup=coupAt();
   const pwOwn=pWinCall(p, p.house);
-  const blocked=knownStrongerShares(p);
+  /* Do not arm a Court a stronger Fae is likely sharing — peeked OR inferred.
+     Become stronger first; the Wisps will still be there. */
+  const myGuess = p.knownStatus!=null ? p.knownStatus : selfStatusMean(p);
+  const blocked = knownStrongerShares(p) || rivalThreatIn(p, p.house) > myGuess + 0.5;
   const forceGate=Math.max(0.42, 0.55 - 0.2*boardHeat(p));   // hot board: forcing at lower odds beats losing
   /* Decoy play — the same bluff level humans use: sometimes on the very first
      wisp, occasionally the second, never after. Only when the tempo is
@@ -5415,6 +5762,8 @@ function aiPickHouse(p){
      The false placement pollutes every rival's read of this AI. */
   if(G.placeEvidence){
     const mine=Object.values(G.placeEvidence[p.i]).reduce((a,b)=>a+b,0);
+    /* Re-weighting the decoy by table size was tried in both directions and
+       measured worse than this flat rate at every size. */
     const bluffP = mine===0 ? 0.38 : mine===1 ? 0.15 : 0;
     if(bluffP && Math.random()<bluffP && !blocked &&
        G.nobles[p.house]<=q-3 && boardHeat(p)<0.35){
@@ -5423,7 +5772,13 @@ function aiPickHouse(p){
         if(h.id===p.house) return;
         const n=G.nobles[h.id];
         if(n+1>=q) return;                                   // never arm an enemy Court, even as theater
-        const s = -n - rivalThreatIn(p,h.id)*0.7 + Math.random()*0.3;
+        /* The point of a decoy is not to sell one false Court, it is to leave
+           no Court obvious. So prefer somewhere this AI has not already been
+           seen placing: one Wisp each in two Courts hides far better than two
+           in one. */
+        const seen = (G.placeEvidence[p.i][h.id]||0);
+        const s = -n - rivalThreatIn(p,h.id)*0.7 + (n===0 ? 1.2 : 0)
+                  - seen*2.5 + Math.random()*0.3;
         if(s>ds){ ds=s; d=h.id; }
       });
       if(d) return d;
@@ -5443,8 +5798,12 @@ function aiPickHouse(p){
     } else {
       // Dumping: pure damage control. Never bring an enemy Court to quorum;
       // prefer the Court whose believed occupants are weakest.
+      /* Dumping: pure damage control, and an empty Court is the safest ground
+         there is — a Wisp left there can only ever scatter. The nearer a Court
+         stands to its Call, the worse a place it is to leave anything. */
       const threat=rivalThreatIn(p, h.id);
-      s = 1 - n*1.0 - threat*0.7 - (n1>=q ? 14+threat : 0);
+      const creep = n1>=q ? 14+threat : n1===q-1 ? 6+threat*0.5 : n1===q-2 ? 2 : 0;
+      s = 1 - n*1.0 - threat*0.7 - creep + (n===0 ? 1.5 : 0);
     }
     if(s>best){ best=s; bestId=h.id; }
   });
@@ -5483,12 +5842,30 @@ function boardHeat(p){
    rises when waiting has real value (unpeeked self, unscouted strong rivals,
    a visible higher Radiance to swap for). Discounted by breakability when at
    exactly quorum (rivals' hidden Magik — counts are public — may snuff it). */
+/* Seats between p and o in the dance order; 1 means o acts next. */
+function seatsUntil(p, o){ const n=G.players.length; return ((o.i-p.i)+n)%n; }
+/* Is a rival about to simply win, before p dances again? A Court they belong
+   to stands armed, and their hand can reach a completion this turn. */
+function doomIsNext(p){
+  const armed=HOUSES.filter(h=>G.nobles[h.id]>=quorum());
+  return others(p).some(o=>{
+    const canFinish = o.hand.length && minCompletion(o)<=Math.max(...o.hand);
+    if(!canFinish) return false;
+    return armed.some(h=>{
+      if(h.id===p.house && pWinCall(p,p.house)>=0.5) return false;   // I would win that one
+      return pInCourt(p,o,h.id)>=0.55 && o.status>selfStatusMean(p);
+    });
+  });
+}
 function aiShouldCall(p){
   if(G.nobles[p.house] < quorum()) return false;
   let pw = pWinCall(p, p.house);
+  const myIron = p.intrigues.filter(x=>x==='Cold Iron').length;
   if(G.nobles[p.house]===quorum() && G.mode && G.mode.reactionWindows){
+    // Rival Magik threatens the Call — but Cold Iron in hand guards it, so
+    // each iron cancels roughly two cards' worth of that fear.
     const rivalCards = others(p).reduce((a,o)=>a+o.intrigues.length,0);
-    pw *= Math.pow(0.93, rivalCards);
+    pw *= Math.pow(0.93, Math.max(0, rivalCards - myIron*2));
   }
   const heat = boardHeat(p);
   const m=selfStatusMean(p);
@@ -5496,7 +5873,22 @@ function aiShouldCall(p){
   if(p.knownStatus===null) upside+=0.06;                 // could peek my own number
   upside += Math.min(0.06, 0.03*others(p).filter(o=>!p.knownHouses[o.i] && o.status>=m).length); // could scout threats
   if(p.knownStatus!==null && maxVisible(p)>p.knownStatus) upside+=0.05;  // could swap up
-  const thr = Math.min(0.70, Math.max(0.36, 0.55 + upside - 0.26*heat));
+  /* Table size: with more rivals a good chance is worth taking, since the
+     night is likelier to end without you; at three, waiting is cheap. */
+  let adj = G.players.length<=3 ? 0.09 : (G.players.length>=5 ? -0.05 : 0);
+  /* Protection and pressure. Holding iron, swing freely. Without it, a Call
+     that gets broken costs little on a slow board, so go anyway — but if a
+     rival Court is already at the brink, hold the moment and stay armed. */
+  const rivalNear = HOUSES.some(h=>h.id!==p.house && G.nobles[h.id]>=quorum()-1);
+  if(myIron>0) adj -= 0.10;
+  else adj += rivalNear ? 0.10 : -0.08;
+  let thr = Math.min(0.78, Math.max(0.30, 0.55 + upside - 0.26*heat + adj));
+  /* When a rival wins on their next action, there is nothing left to improve.
+     Take the Call at whatever odds it holds: a coin toss beats a certainty. */
+  if(doomIsNext(p)) thr = Math.min(thr, 0.22);
+  /* A card of mine was struck down this round: the Magik is live out there,
+     and a Call staked now is likelier to be broken. */
+  if(p._counteredOn===G.round) thr += 0.08;
   if(pw >= thr) return true;
   // Smooth boundary: a narrow linear ramp just below the threshold (no cliff,
   // no reads of the AI's exact bar) — not recklessness, just no hard edge.
@@ -5507,12 +5899,23 @@ async function aiKingdomAction(p, track){
   await wait(500);
   const qh=housesAtQuorum();
   if(qh.some(h=>h.id===p.house)){
-    if(aiShouldCall(p)) return callForThrone(p.house, p, false);
+    if(aiShouldCall(p)){ try{ standFlash(p, 'Calls for a True Name'); }catch(e){}
+      return callForThrone(p.house, p, false); }
+  }
+  // A declared Princess may Call in either of her printed adjacent Courts.
+  if(p.declared && p.patron==='princess'){
+    for(const H2 of [PRINCESS_NEXT[p.house], PRINCESS_PREV[p.house]]){
+      if(qh.some(h=>h.id===H2) && pWinCall(p,H2)>=0.55){
+        try{ standFlash(p, 'Calls for a True Name'); }catch(e){}
+        return callForThrone(H2, p, false);
+      }
+    }
   }
   if(track==='Faerie Bridge'){
      // Baseline: always gain a Faerie Magik card.
      drawIntrigue(p);
      log(`${fmtP(p)} completes the Faerie Bridge and gains a <b>Faerie Magik</b> card.`);
+     try{ standFlash(p, 'takes Faerie Magik'); }catch(e){}
      // Secondary: move OR flip a stone. Prefer flipping a rival off a regular stone
      // (a flip tumbles them outright); ferry a rival off a conjured stone otherwise.
      const enemiesOnStones = [];
@@ -5520,34 +5923,59 @@ async function aiKingdomAction(p, track){
         const k=idx+1, on=faeOnStep(tr,k);
         if(on.length && !on.includes(p)) enemiesOnStones.push({tr,k,c:st.c});
      }));
+     /* Flip vs ferry against a rival standing on a stone: the flip tumbles them
+        out of the dance, the ferry only carries them to another dance's start.
+        Three variants of preferring the flip were measured against this rule
+        and none separated from it beyond run-to-run noise, so the simple rule
+        stands: flip a rival off a regular stone, ferry one off a conjured stone
+        and leave the shared Magik economy intact. */
      const regularEnemies = enemiesOnStones.filter(e=>!e.c);
      const conjuredEnemies = enemiesOnStones.filter(e=>e.c);
-     if(regularEnemies.length){ await ACTIONS.flipStone(p); return; }         // flip tumbles them
-     if(conjuredEnemies.length){ await aiFerryConjured(p, false); return; }   // ferry resets them
-     // No rival to disrupt: mild coin-flip, and often just keep the card.
-     if(Math.random()<0.4){ if(Math.random()<0.5) await ACTIONS.flipStone(p); else await aiFerryConjured(p, false); }
+     if(regularEnemies.length){ await ACTIONS.flipStone(p); return; }
+     if(conjuredEnemies.length){ await aiFerryConjured(p, false); return; }
+     /* The stone action is mandatory (v6.0): ferry for position, else flip. */
+     if(conjuredList().length && Math.random()<0.65) await aiFerryConjured(p, true);
+     else await ACTIONS.flipStone(p);
      return;
   }
   if(track==='Faerie Ring'){
-    const top=others(p).reduce((a,b)=>a.status>b.status?a:b);
-    if(p.knownStatus!==null){
-      // Trade up: take the highest visible Radiance if it beats what I hold.
-      if(top.status>p.knownStatus){ p._target=top; return ACTIONS.swapStatus(p); }
-      // already holding the best it can see — refresh its knowledge rather than trade down
-      return ACTIONS.lookStatus(p);
+    /* Trading beats looking. A number I already know is not worth a second
+       glance, and an unknown one is worth less than a big visible one I can
+       simply take. Take the HIGHEST by default: it is plainly the best card.
+       The exception is early, calm play, where the tallest number on the table
+       draws every Ring swap and every forced redraw — there, a second best
+       that costs only a point is the quieter thing to hold. */
+    const rank=others(p).slice().sort((a,b)=>b.status-a.status);
+    const top=rank[0], second=rank[1];
+    const mine = p.knownStatus!=null ? p.knownStatus : selfStatusMean(p);
+    let target = (top.status>mine+0.5) ? top : null;
+    /* The highest is the better card and is taken by default. But when the
+       second is within a point of it, the point is cheaper than the heat: the
+       tallest number draws every Ring swap and every forced redraw, so the
+       quieter hand is usually worth more than the louder one. */
+    if(target && second && second!==top && second.status>mine+0.5 &&
+       top.status-second.status<=1 && Math.random()<0.6) target=second;
+    if(target){ p._target=target; return ACTIONS.swapStatus(p); }
+    // No trade worth making. Look only at a genuinely jumbled field, where the
+    // number actually changes a decision; never when I already know it.
+    if(p.knownStatus===null){
+      const vs=rank.map(o=>o.status);
+      const spread=Math.max(...vs)-Math.min(...vs);
+      if(spread>=3 || Math.random()<0.35) return ACTIONS.lookStatus(p);
+      const u=unseenStatuses(p);
+      const pBeat=u.filter(v=>v>top.status).length/Math.max(1,u.length);
+      if(pBeat<=0.25){ p._target=top; return ACTIONS.swapStatus(p); }
     }
-    // Unknown own number: swapping loses no secrecy (Radiance is public to others)
-    // and gains knowledge AND material in ONE favor. Swap immediately unless my
-    // hidden card has a real chance of already beating the best visible.
-    const u=unseenStatuses(p);
-    const pBeat=u.filter(v=>v>top.status).length/Math.max(1,u.length);
-    if(pBeat<=0.25){ p._target=top; return ACTIONS.swapStatus(p); }
     return ACTIONS.lookStatus(p);
   }
   if(track==='Faerie Fort'){
+    const myGuess = p.knownStatus!=null ? p.knownStatus : selfStatusMean(p);
     // Value-compare: feed my own Court vs snuff the most dangerous rival Court.
-    const donors=HOUSES.filter(h=>h.id!==p.house && G.nobles[h.id]>0);
+    const donors=HOUSES.filter(h=>h.id!==p.house && G.nobles[h.id]>0 && !protectedCourt(h.id));
     const canFeed = donors.length && G.nobles[p.house]+1<coupAt() && !knownStrongerShares(p);
+    /* No hiding in the lure: where a Wisp SETTLES is the tell, not where it
+       came from, and every lure ends in placeNoble like any other placement.
+       (A previous version treated luring as untraceable. It is not.) */
     const feedVal = canFeed ? pWinCall(p,p.house)*(G.nobles[p.house]+1>=quorum()? 26 : 14) : -1;
     let snuffVal=-1, snuffTarget=null;
     const heat=boardHeat(p);
@@ -5556,9 +5984,15 @@ async function aiKingdomAction(p, track){
       // Late-game control: armed and near-armed enemy Courts are worth real value,
       // scaling with how hot the board runs.
       // The favor takes TWO Wisps: armed and near-armed Courts fall further.
+      /* Snuffing is what you reach for when you are behind: a low number and a
+         fat Court you do not belong to. Otherwise the lure builds AND defends,
+         and it wins the comparison. An armed Court is the exception: that is an
+         emergency at any standing. */
+      const behind = myGuess < maxVisible(p) - 1.5;
+      const lean = behind ? 1.15 : 0.75;
       const v = (n>=quorum()? (26+threat*1.3)*(1+heat*0.5)
-               : n===quorum()-1? (14+threat*0.9)*(1+heat*0.5)
-               : threat*0.35);
+               : n===quorum()-1? (14+threat*0.9)*(1+heat*0.5)*lean
+               : threat*0.35*lean);
       if(v>snuffVal){ snuffVal=v; snuffTarget=h.id; }
     });
     if(feedVal>snuffVal && canFeed){
@@ -5586,8 +6020,15 @@ async function aiKingdomAction(p, track){
     });
     if(best){ p._target=best; return ACTIONS.swapHouse(p); }
   }
-  // 2) The Court-Hopper: a KNOWN rival sits in a meaningfully richer Court, and
-  //    the seat is winnable — hop into the gathered light instead of scouting on.
+  /* 2) THE COURT-HOPPER. When a tall Radiance has spent the game feeding one
+        Court and it now stands at its Call, trading Courts with them takes the
+        gathered light AND carries the only rival who could beat me there out of
+        it. Measured against the reported table play — six Fae, a Radiance 9
+        that fed the Meadow three times, Meadow at quorum — this fires 93% of
+        the time. It looks rare in a behaviour census only because the shape is
+        rare: it needs a strongly-read rival sitting in a richer, armed Court.
+        A rewrite that scored every trade by post-swap win probability and ran
+        before scouting was tried, and took the same scenario DOWN to 77%. */
   {
     let best=null, bestScore=0;
     const myGuess = p.knownStatus!=null ? p.knownStatus : selfStatusMean(p);
@@ -5598,13 +6039,19 @@ async function aiKingdomAction(p, track){
              || HOUSES.map(h=>h.id).find(hid=>hid!==p.house && pInCourt(p,o,hid)>=0.7);
       if(!H || H===p.house) return;
       const gain=G.nobles[H]-G.nobles[p.house];
-      if(gain<1 || G.nobles[H]<quorum()-2) return;           // near-armed riches only
+      /* A Court at the brink is worth joining even for no gain in Wisps: if the
+         Call is about to fire there, the only question is whether I am in it
+         and strong enough to win it. */
+      const brink = G.nobles[H] >= coupAt()-1;
+      if((gain<1 && !brink) || G.nobles[H]<quorum()-2) return;
+      if(brink && rivalThreatIn(p,H) > myGuess) return;       // I would lose that Call
       const sharer=others(p).find(x=>x!==o && p.knownHouses[x.i]===H && x.status>myGuess+1);
       if(sharer) return;                                     // a known stronger Fae waits there
-      const score=gain + (G.nobles[H]>=quorum()-1 ? 2 : 0) + (p.knownHouses[o.i] ? 1 : 0);
+      const score=gain + (G.nobles[H]>=quorum()-1 ? 2 : 0) + (p.knownHouses[o.i] ? 1 : 0)
+                + (brink ? 3 : 0);
       if(score>bestScore){ bestScore=score; best=o; }
     });
-    if(best && Math.random() < (bestScore>=4 ? 0.8 : 0.55)){
+    if(best && Math.random() < (bestScore>=6 ? 0.92 : bestScore>=4 ? 0.8 : 0.55)){
       p._target=best; return ACTIONS.swapHouse(p);
     }
   }
@@ -5631,6 +6078,9 @@ async function aiKingdomAction(p, track){
    stronger rival shares it, or win probability there is hopeless. */
 function aiWantsRedrawCourt(p){
   if(knownStrongerShares(p)) return Math.random()<0.8;
+  // A barren Court while another brims: there is little to lose in the draw.
+  if(G.nobles[p.house]<=1 && HOUSES.some(h=>h.id!==p.house && G.nobles[h.id]>=quorum()-1))
+    return Math.random()<0.7;
   if(pWinCall(p,p.house)<0.15 && G.nobles[p.house]<quorum()-1) return Math.random()<0.4;
   return false;
 }
@@ -5644,7 +6094,12 @@ function aiWantsRedrawStatus(p){
   if(!pool.length) return false;
   const mean=pool.reduce((a,b)=>a+b,0)/pool.length;
   const contesting = G.nobles[p.house]>=quorum()-2;    // its Court is arming a Call
-  return contesting && p.knownStatus<=4 && mean>p.knownStatus+1 && Math.random()<0.6;
+  if(contesting && p.knownStatus<=4 && mean>p.knownStatus+1 && Math.random()<0.6) return true;
+  /* Hail Mary: a rival wins on their next action and this number cannot beat
+     the table. A blind draw is a poor chance; it is still the only one. */
+  if(typeof doomIsNext==='function' && doomIsNext(p) &&
+     p.knownStatus < maxVisible(p)-2 && mean>p.knownStatus) return Math.random()<0.8;
+  return false;
 }
 /* Pick the AI's mandatory flip target: prefer flipping a stone under a rival who
    is close to finishing; never flip under itself if avoidable; else a harmless
@@ -5697,7 +6152,8 @@ async function aiNobleReaction(q, houseId){
     await playActiveIntrigue(q,'Snuff Out');
     return;
   }
-  if(q.intrigues.includes('Wisp-Lure') && G.nobles[q.house]+1<coupAt() && !knownStrongerShares(q)){
+  if(q.intrigues.includes('Wisp-Lure') && !protectedCourt(houseId) &&
+     G.nobles[q.house]+1<coupAt() && !knownStrongerShares(q)){
     q._from=houseId; q._to=q.house;
     await playActiveIntrigue(q,'Wisp-Lure');
   }
@@ -5729,13 +6185,21 @@ async function aiPostMagik(p){
     let target=null, danger=0;
     HOUSES.filter(h=>h.id!==p.house).forEach(h=>{
       const n=G.nobles[h.id];
-      if(n>=quorum()){ const t=rivalThreatIn(p,h.id); if(6+t>danger){ danger=6+t; target=h.id; } }
-      else if(n===coupAt()-1){ if(9>danger){ danger=9; target=h.id; } }
+      /* Proximity to the Call outranks the size of the number sitting in it —
+         and a Court whose believed occupants still hold a high rune is nearer
+         than its Wisp count suggests, because they can dance to a completion
+         and place the next Wisp themselves this very turn. */
+      const armedHand = others(p).some(o=>pInCourt(p,o,h.id)>=0.4 && o.hand.length &&
+                                          minCompletion(o)<=Math.max(...o.hand));
+      const reach = armedHand ? 5 : 0;
+      if(n===coupAt()-1){ if(24+reach>danger){ danger=24+reach; target=h.id; } }
+      else if(n>=quorum()){ const t=rivalThreatIn(p,h.id); if(14+t+reach>danger){ danger=14+t+reach; target=h.id; } }
+      else if(n===quorum()-1){ const t=rivalThreatIn(p,h.id); if(6+t*0.5+reach>danger){ danger=6+t*0.5+reach; target=h.id; } }
     });
     if(target && p.intrigues.includes('Snuff Out')){
       p._from=target; await playActiveIntrigue(p,'Snuff Out'); continue;
     }
-    if(target && p.intrigues.includes('Wisp-Lure') && G.nobles[p.house]+1<coupAt() && !knownStrongerShares(p)){
+    if(target && !protectedCourt(target) && p.intrigues.includes('Wisp-Lure') && G.nobles[p.house]+1<coupAt() && !knownStrongerShares(p)){
       p._from=target; p._to=p.house; await playActiveIntrigue(p,'Wisp-Lure'); continue;
     }
     break;
@@ -5754,7 +6218,7 @@ async function aiWispBurst(p){
   if(knownStrongerShares(p)) return false;         // a stronger known housemate would inherit my throne
   const adders=()=>{
     const calls=p.intrigues.filter(nm=>nm==='Wisp-Call').length;
-    const donors=HOUSES.reduce((a,h)=>a+(h.id!==house?G.nobles[h.id]:0),0);
+    const donors=HOUSES.reduce((a,h)=>a+((h.id!==house && !protectedCourt(h.id))?G.nobles[h.id]:0),0);
     return calls + Math.min(p.intrigues.filter(nm=>nm==='Wisp-Lure').length, donors);
   };
   const gapQ=()=>quorum()-G.nobles[house];
@@ -5784,7 +6248,7 @@ async function aiWispBurst(p){
       if(p.intrigues.includes('Wisp-Call')){
         await playActiveIntrigue(p,'Wisp-Call'); played=true; continue;
       }
-      const donor=HOUSES.filter(h=>h.id!==house && G.nobles[h.id]>0)
+      const donor=HOUSES.filter(h=>h.id!==house && G.nobles[h.id]>0 && !protectedCourt(h.id))
         .sort((a,b)=>(rivalThreatIn(p,b.id)+G.nobles[b.id])-(rivalThreatIn(p,a.id)+G.nobles[a.id]))[0];
       if(!donor) break;
       p._from=donor.id; p._to=house;
@@ -5793,12 +6257,47 @@ async function aiWispBurst(p){
   } finally { delete p._burst; }
   return played;
 }
+/* When should the AI declare its patron? Heuristics validated by simulation:
+   the Queen declares eagerly once her Court nears the Call (measured +3 win
+   points over last-second declaring); the King early with a confident number;
+   the Prince to arm or force; the Princess when her printed second Court is hot. */
+async function aiMaybeDeclare(p){
+  if(p.declared || G.over || !p.patron) return;
+  const pw=pWinCall(p,p.house);
+  const canComplete=p.hand.some(v=>v>=minCompletion(p)) || p.intrigues.includes('Midsummer Reel');
+  let go=false;
+  if(p.patron==='king'){
+    const conf = p.knownStatus!=null ? p.knownStatus>=6 : selfStatusMean(p)>=4.8;
+    go = G.round>=1 && conf && !knownStrongerShares(p) && Math.random()<0.7;
+  } else if(p.patron==='prince'){
+    go = (G.nobles[p.house]===coupAt()-1 && pw>=0.55) ||
+         (G.nobles[p.house]>=quorum()-2 && pw>=0.40 && !knownStrongerShares(p));
+  } else if(p.patron==='queen'){
+    p.declared=true; const pwQ=pWinCall(p,p.house); p.declared=false;
+    go = (G.nobles[p.house]>=quorum()-1 && pwQ>=0.25) ||
+         (G.nobles[p.house]>=quorum() && canComplete && pwQ>=0.40);
+  } else if(p.patron==='princess'){
+    const eff = p.knownStatus!=null ? p.knownStatus : selfStatusMean(p);
+    go = [PRINCESS_NEXT[p.house], PRINCESS_PREV[p.house]].some(H2=>
+      G.nobles[H2]>=quorum()-1 && eff > rivalThreatIn(p,H2)+0.5);
+  }
+  if(go){
+    await wait(400);
+    if(G.over) return;
+    await doDeclare(p);
+  }
+}
 async function aiTurn(p){
   const ep=EPOCH;
   banner(`${p.name}\u2019s turn`);
   await wait(850);
   if(ep!==EPOCH) return;
+  try{ await aiMaybeDeclare(p); }catch(e){ if(e instanceof GameOver) throw e; CONS.error(e); }
+  if(G.over || ep!==EPOCH) return;
   if(p.intrigues.includes('Scrying Pool') && p.knownStatus===null && callHorizon() && Math.random()<.9)
+    await playActiveIntrigue(p,'Scrying Pool');
+  else if(p.intrigues.includes('Scrying Pool') && p.knownStatus!==null && callHorizon() && Math.random()<.6 &&
+     others(p).some(o=>!o.declared && p.knownHouses[o.i]==null && o.status>=6))
     await playActiveIntrigue(p,'Scrying Pool');
   if(ep!==EPOCH) return;
   // Defuse an imminent forced Call in an enemy Court I'd lose (the ceiling is one away).
@@ -5807,6 +6306,10 @@ async function aiTurn(p){
     p._from=danger.id; await playActiveIntrigue(p,'Snuff Out');
   }
   if(ep!==EPOCH) return;
+  /* A deliberate sit-out to reclaim a spent hand was tried twice and measured
+     negative both times: the automatic reclaim already refills an empty hand,
+     so paying a whole turn only buys the same runes sooner. Skip & Reclaim
+     stays a human tempo tool. */
   // THE STACK first: if the whole road to a Call is in hand, take it now.
   if(G.mode && G.mode.magik){
     const bursted=await aiWispBurst(p);
@@ -5846,8 +6349,14 @@ async function aiTurn(p){
         renderHUD(); await aiPostMagik(p); await wait(500); return;
       }
       // Lure a Wisp (rune 6) — feed the AI's own Court toward a Call
-      if(p.hand.includes(6) && wantsWin(p) && !knownStrongerShares(p) && G.nobles[p.house]<quorum() && G.nobles[p.house]+1<coupAt()){
-        const donors=HOUSES.filter(h=>h.id!==p.house && G.nobles[h.id]>0);
+      /* Six steps are worth more than a lure almost always. Spend the 6 as a
+         lure late, when a rival Court stands at the brink and the Fort has
+         grown too long to reach in time. */
+      const brinkH = HOUSES.find(h=>h.id!==p.house && G.nobles[h.id]>=quorum()-1 && rivalThreatIn(p,h.id)>2);
+      const fortFar = !TRACKS.includes('Faerie Fort') || trackLen('Faerie Fort')>6;
+      if(p.hand.includes(6) && brinkH && fortFar && !knownStrongerShares(p) &&
+         G.nobles[p.house]+1<coupAt() && Math.random()<0.6){
+        const donors=HOUSES.filter(h=>h.id!==p.house && G.nobles[h.id]>0 && !protectedCourt(h.id));
         if(donors.length && Math.random()<0.6){
           p.hand.splice(p.hand.indexOf(6),1); p.discard.push(6);
           // Steal from the Court that most threatens me (defence + offence in one move).
@@ -5884,7 +6393,14 @@ async function aiTurn(p){
           });
         });
         if(defuse && Math.random()<0.75){ t=defuse; which='radiance'; }
-        else if(top.status>=8 && top.status>m && Math.random()<0.5){ t=top; which='radiance'; }
+        else if(top.status>=7 && top.status>m &&
+                Math.random() < (HOUSES.some(h=>G.nobles[h.id]>=quorum()-1 && pInCourt(p,top,h.id)>=0.45) ? 0.8 : 0.55)){
+          /* Always the Radiance against a tall number: it strips the card that
+             makes them dangerous AND leaves them blind to what replaced it, so
+             they hesitate to Call. Tearing up a Court is the riskier tool — the
+             draw can seat them right beside me. */
+          t=top; which='radiance';
+        }
         else if(shared && Math.random()<0.55){ t=shared; which='court'; }
         if(t){
           p.hand.splice(p.hand.indexOf(5),1); p.discard.push(5);
@@ -5951,7 +6467,7 @@ async function aiTurn(p){
   // Rune 2 played to dance → MANDATORY move of a conjured stone (if any exist). Midsummer only.
   if(playedCard===2 && !G.over && G.mode && G.mode.runePowers) await aiFerryConjured(p, true);
   if(ep!==EPOCH) return;
-  if(pts>0) await allocate(p,p,pts);
+  if(pts>0) await allocate(p,p,pts+(playedCard!=null?kingBonus(p):0));
   if(ep!==EPOCH) return;
   if(!p.hand.length){
     p.hand.push(...p.discard.splice(0));
@@ -6336,7 +6852,7 @@ function peerIdFor(code){ return 'faerie-dances-room-'+code; }
 /* Protocol version: bumped whenever the wire format changes. A guest whose
    file speaks a different protocol is turned away at the door with a clear
    message — a silent cross-version desync would be far worse than a bounce. */
-const NET_VER=1;
+const NET_VER=3;
 /* The broker (signaling) connection can drop while the game's own P2P wires
    stay healthy — laptop sleep, a wifi blip. Without the broker, no NEW dials
    (rejoins!) can arrive, so reconnect to it automatically with backoff. */
@@ -6460,8 +6976,8 @@ function snapG(viewSeat){
     if(p.i===viewSeat){
       if(p.knownStatus===null) p.status=null;   // your own Radiance faces away from you
     } else {
-      p.house=null;                             // rivals' Courts are facedown
-      p.knownStatus=null; p.knownHouses={};     // rivals' private knowledge is theirs alone
+      if(!p.declared){ p.house=null; p.patron=null; }   // a facedown card keeps both its secrets
+      p.knownStatus=null; p.knownHouses={}; p.knownPatrons={};   // rivals' private knowledge is theirs alone
       p.intrigueCount=p.intrigues.length;       // Magik hands are secret; counts are public
       p.intrigues=[];
     }
@@ -8240,8 +8756,8 @@ function stepsSecrets(me){
   return [
     { target:()=>$('#c3d'), eyebrow:'The Board', title:'The Four Courts',
       body:`The four colored corners of the board are the <b>Courts</b>: Mountain, Meadow, Forest, and River. See the little glowing orb resting in the Meadow? That\u2019s a <b>Wisp</b>. Courts are where Wisps gather (much more on them soon), and where the game will ultimately be decided.` },
-    { target:()=>$('#myhouse'), eyebrow:'Your Secret', title:'Your Court',
-      body:`This is <b>your Court</b>, the ${fmtH(me.house)}. Only you know your allegiance. To win, you\u2019ll want Wisps gathered in this Court, and the highest <b>Radiance</b> among the Fae who share it. Radiance is next.` },
+    { target:()=>$('#myhouse'), eyebrow:'Your Secret', title:'Your Court, and your Patron',
+      body:`This is <b>your Court</b>, the ${fmtH(me.house)}. Only you know your allegiance. Your card also bears a <b>High Fae patron</b> \u2014 for you, <b>${PATRON_NAME[me.patron]}</b> \u2014 whose gift you may claim later by <b>declaring</b> (more soon). To win, you\u2019ll want Wisps gathered in this Court, and the highest <b>Radiance</b> among the Fae who share it. Radiance is next.` },
     { target:()=>$('#mystatus'), eyebrow:'Your Secret', title:'Your Radiance (hidden!)',
       body:`This is <b>your Radiance</b>, a value from 1 to 9, and it is <b>how you win</b>: when a True Name is Called in a Court, the Fae there with the <b>highest Radiance</b> takes it. Now here\u2019s the twist: <b>it faces away from you.</b> Every rival can see your number, but <i>you cannot see your own.</i> Some favors (rewards you\u2019ll earn by dancing) let you peek.` },
     { target:()=>standsSpotTarget(), eyebrow:'Your Rivals', title:'What you can see',
@@ -8255,6 +8771,12 @@ function stepsRunes(){
     { target:()=>$('#dancerblock'), eyebrow:'Your Turn', title:'Your two Glamours',
       body:`You never enter the dance yourself: you cast <b>two Glamours</b> in your color, and they wait right here beside your runes. You may <b>split a rune\u2019s steps between both</b>.<br><br><b>To move</b>: click or tap a Glamour, and the stones it can reach <b>light up</b>; send it to one.`,
       nextLabel:'Try it \u2192' },
+  ];
+}
+function stepsPatrons(me){
+  return [
+    { target:()=>$('#myhouse'), eyebrow:'The High Fae', title:'Declaring your Patron',
+      body:`Each Court has four cards, one for each High Fae: the <b>Queen</b>, <b>King</b>, <b>Prince</b>, and <b>Princess</b>. Yours is <b>${PATRON_NAME[me.patron]}</b>.<br><br><b>As the very first thing on your turn</b> \u2014 before any rune or Magik \u2014 you may press <b>\u2726 DECLARE</b> on your Court card. Your allegiance and patron become public, and the gift is yours while the card lies face up:<br><br><b>The Queen</b>: +2 Radiance at the Call, and you break ties.<br><b>The King</b>: +1 step each turn you dance a rune.<br><b>The Prince</b>: place a Wisp in any Court on declaring; no Wisp can be lured out of your Court.<br><b>The Princess</b>: you also belong to both adjacent Courts, printed on the card.<br><br>A declared card stays declared through swaps; a discarded one is replaced face down. Declare only if the gift is worth the secrecy!` },
   ];
 }
 function stepsDances(){
@@ -8349,7 +8871,7 @@ async function tutDoerFirstStep(me){
 function midStepsWelcome(){
   return [
     { target:null, eyebrow:'Welcome back', title:'The Midsummer Dance',
-      body:`<i>Midsummer has arrived, and the Fae have begun to dance.</i><br><br>Midsummer adds three things to the Masquerade: a <b>fourth path</b>, <b>Conjured Stones</b>, and <b>rune powers</b>. <b>Faerie Magik</b> you already know, but here it flows differently. Everything else holds: same Courts, same Radiance, same Call at 5 Wisps.` },
+      body:`<i>Midsummer has arrived, and the Fae have begun to dance.</i><br><br>Midsummer adds three things to the Masquerade: a <b>fourth path</b>, <b>Conjured Stones</b>, and <b>rune powers</b>. <b>Faerie Magik</b> you already know, but here it flows differently. Everything else holds: same Courts, same Radiance, same <b>High Fae patrons and declaring</b>, same Call at 5 Wisps.` },
   ];
 }
 
@@ -8542,10 +9064,13 @@ async function demoFavors(r1,r2){
   if(rr.house===me.house) rr.house = HOUSES.find(h=>h.id!==me.house).id;   // the lesson needs a visible change
   await tutSeg([{ target:()=>$('#myhouse'), eyebrow:'Watch \u00b7 Faerie Mound', title:'Court favors',
     body:`This is <b>your Court card</b>: you belong to the ${fmtH(me.house)}. Keep your eye on it: ${fmtP(rr)} is about to spend a Mound favor\u2026` }]);
-  const mine=me.house; me.house=rr.house; rr.house=mine;   // the swap, live
+  const mine=me.house, minePt=me.patron;
+  me.house=rr.house; me.patron=rr.patron;
+  rr.house=mine; rr.patron=minePt;                          // the swap, live (patron rides the card)
   renderHUD(); syncBoard();
   await tutSeg([{ target:()=>$('#myhouse'), eyebrow:'Watch \u00b7 Faerie Mound', title:'\u2026and the Courts change hands',
     body:`${fmtP(rr)} <b>swapped Courts with you</b>: you now belong to the ${fmtH(me.house)}, and ${fmtP(rr)} holds your old allegiance.<br><br><b>Why you\u2019d want this:</b> you only win in a Court you belong to. <b>Swap</b> to slip into a Wisp-rich Court, or <b>Peek</b> to learn a rival\u2019s allegiance first.` }]);
+  rr.patron=me.patron; me.patron=minePt;
   me.house=mine; rr.house=rrOld;                            // the lesson ends; the veil falls back
   renderHUD(); syncBoard();
   // FAERIE FORT: drift the demo Wisp from Meadow to Forest
@@ -8585,6 +9110,8 @@ async function tutGuidedWin(){
   const myCourt='forest';
   me.house=myCourt; me.status=5;              // mid Radiance \u2014 and we WIN
   const r1=G.players[1], r2=G.players[2], r3=G.players[3];
+  me.patron='king'; r1.patron='prince'; r2.patron='queen'; r3.patron='princess';
+  G.players.forEach(q=>{ q.declared=false; });
   r1.house=myCourt;    r1.status=3;           // shares my Court, but lower \u2014 I beat them
   r2.house='mountain'; r2.status=9;           // highest number in the game, but WRONG Court
   r3.house='river';    r3.status=7;           // also high, also wrong Court
@@ -8653,6 +9180,7 @@ async function runMasqTutorial(){
     await tutSeg(stepsWelcome());
       await tutSeg(stepsSecrets(me));
     await tutSeg(stepsRunes());
+    await tutSeg(stepsPatrons(me));
     await tutDoerFirstStep(me);
     await tutSeg(stepsDances());
     await tutSeg(stepsPayoff());
