@@ -1381,6 +1381,7 @@ function drawFrom(deck, discard){
 }
 function housesAtQuorum(){ return HOUSES.filter(h=>G.nobles[h.id]>=quorum()); }
 function fmtP(p){ return `<b style="color:${p.color}">${p.name}</b>`; }
+function fmtPs(p){ return p.name==='You' ? `<b style=\"color:${p.color}\">Your</b>` : fmtP(p)+'’s'; }
 function fmtH(id){ const h=HOUSE_BY_ID[id]; return `<b style="color:${h.css}">${h.name}</b>`; }
  
 /* Everyone can see every OTHER player's status. An AI's belief about its
@@ -4168,7 +4169,7 @@ function redrawCourt(actor){
   actor.house=card.h; actor.patron=card.pt;
   actor.declared=false;   // the new Court card is kept face down
   if(wasDeclared)
-    log(`${fmtP(actor)}\u2019s declared card falls: <b>${PATRON_NAME[oldPt]}</b> of the ${fmtH(old)} lies face up in the discard. The new card is kept face down.`, 'alert');
+    log(`${fmtPs(actor)} declared card falls: <b>${PATRON_NAME[oldPt]}</b> of the ${fmtH(old)} lies face up in the discard. The new card is kept face down.`, 'alert');
   else
     log(`${fmtP(actor)} discards the ${fmtH(old)} card <b>face up</b> and draws a new Court.`, 'sys');
   // Every rival's knowledge of this player's Court is now stale.
@@ -4422,7 +4423,7 @@ async function allocateHuman(actor, owner, points, opts={}){
     if(opts.single) lockCi=res.ci;   // all remaining steps stay with this dancer
     syncBoard();
     if(c.steps>=trackLen(c.track)){
-      log(`${fmtP(owner)}\u2019s Glamour completes the <b>${c.track}</b>!`);
+      log(`${fmtPs(owner)} Glamour completes the <b>${c.track}</b>!`);
       await trackComplete(owner, actor, c);
     }
   }
@@ -4453,7 +4454,7 @@ async function allocate(actor, owner, points, opts={}){
     if(opts.single) lockCi=v.ci;
     syncBoard();
     if(c.steps>=trackLen(c.track)){
-      log(`${fmtP(owner)}\u2019s Glamour completes the <b>${c.track}</b>!`);
+      log(`${fmtPs(owner)} Glamour completes the <b>${c.track}</b>!`);
       await trackComplete(owner, actor, c);
     }
     points--;
@@ -4469,11 +4470,13 @@ async function trackComplete(owner, actor, cand){
   const track=cand.track;
   cand.track=null; cand.steps=0;
   cand.spent=true;   // it has danced its dance: on its side until the turn ends
-  log(`${fmtP(owner)}\u2019s Glamour has danced its dance: it cannot rejoin until the turn ends.`, 'sys');
+  log(`${fmtPs(owner)} Glamour has danced its dance: it cannot rejoin until the turn ends.`, 'sys');
   syncBoard();
   const plagued=await plagueWindow(actor);
   if(plagued){
     log(`The <b>Blight</b> withers the dance; no Wisp is unveiled.`, 'alert');
+    if(actor.isHuman) await seatNotice(actor, 'The Blight stands',
+      `Your completed dance withers: <b>no Wisp is unveiled</b>. The rest of the completion continues as normal.`);
   } else {
     const h=await pickHouseForNoble(actor);
     await placeNoble(h, actor);
@@ -4768,7 +4771,7 @@ const ACTIONS={
     if(!t) return;   // expired/failed choice — the favor lapses
     p.knownHouses[t.i]=t.house;
     p.knownPatrons[t.i]=t.patron;
-    log(`${fmtP(p)} peeks at ${fmtP(t)}\u2019s Court card.`);
+    log(`${fmtP(p)} peeks at ${fmtPs(t)} Court card.`);
     logTo(p, `You peek: ${fmtP(t)} belongs to the ${fmtH(t.house)}, and ${PATRON_NAME[t.patron]} supports them.`, 'sys');
     if(p.isHuman){
       await seatNotice(p, 'Allegiance glimpsed', `${t.name} belongs to the <b>${HOUSE_BY_ID[t.house].name}</b>, and <b>${PATRON_NAME[t.patron]}</b> supports them. The card turns facedown again: hold it in memory.`);
@@ -4784,7 +4787,7 @@ const ACTIONS={
        st.c = !st.c;
        const v = tumbleFae(pick.tr, pick.k);
        log(`${fmtP(p)} flips step ${pick.k} of the <b>${pick.tr}</b> to ${st.c?'Conjured':'Regular'}.`);
-       v.forEach(q=>log(`The stone flips, and ${fmtP(q)}\u2019s Glamour tumbles!`, 'alert'));
+       v.forEach(q=>log(`The stone flips, and ${fmtPs(q)} Glamour tumbles!`, 'alert'));
        syncBoard(); renderHUD();
     } else {
        const targets = [];
@@ -4797,7 +4800,7 @@ const ACTIONS={
        st.c = !st.c;
        const v = tumbleFae(choice.tr, choice.k);
        log(`${fmtP(p)} flips step ${choice.k} of the <b>${choice.tr}</b> to ${st.c?'Conjured':'Regular'}.`);
-       v.forEach(q=>log(`The stone flips, and ${fmtP(q)}\u2019s Glamour tumbles!`, 'alert'));
+       v.forEach(q=>log(`The stone flips, and ${fmtPs(q)} Glamour tumbles!`, 'alert'));
        syncBoard(); renderHUD();
     }
   },
@@ -4936,12 +4939,12 @@ async function breachWindow(p, name){
            table can still fight, and should be slower to stake a Call on it. */
         p._counteredOn = G.round;
         takeIntrigue(q,'Cold Iron');
-        log(`${fmtP(q)} plays <b>Cold Iron</b>: ${fmtP(p)}\u2019s ${name} is undone. The cold iron is spent, gone from the game.`, 'alert');
+        log(`${fmtP(q)} plays <b>Cold Iron</b>: ${fmtPs(p)} ${name} is undone. The cold iron is spent, gone from the game.`, 'alert');
         renderHUD();
         // A Cold Iron is itself Faerie Magik — it can be countered by another Cold Iron.
         const countered = await breachWindow(q, 'Cold Iron');
         if(countered){
-          log(`The counter is itself undone: ${fmtP(p)}\u2019s <b>${name}</b> stands!`, 'alert');
+          log(`The counter is itself undone: ${fmtPs(p)} <b>${name}</b> stands!`, 'alert');
           renderHUD();
           // Same player may try again if they hold another Cold Iron.
           mayRespond = q.intrigues.includes('Cold Iron');
@@ -5194,7 +5197,7 @@ async function callForThroneInner(houseId, caller, isCoup){
   if(winner && winner.declared && winner.patron==='princess' && winner.house!==houseId)
     log(`The Princess\u2019s support reaches across the Courts: ${fmtP(winner)} wins from the ${fmtH(winner.house)}.`, 'alert');
   const trueName = winner ? bestowTrueName(houseId) : null;
-  if(winner) log(`The High Fae whisper ${fmtP(winner)}\u2019s True Name: <b>${trueName}</b>.`, 'alert');
+  if(winner) log(`The High Fae whisper ${fmtPs(winner)} True Name: <b>${trueName}</b>.`, 'alert');
   const bestowal = winner
     ? `<div style="margin:2px 0 12px; font-family:var(--disp); letter-spacing:.06em;">\u2726 The High Fae whisper the True Name \u2726<br><b style="font-size:21px; color:var(--gold); display:inline-block; margin-top:4px;">${trueName}</b></div>`
     : '';
@@ -5325,7 +5328,7 @@ async function humanTurn(p){
             const st=G.steps[reelFlip.tr][reelFlip.k-1]; st.c=!st.c;
             const vv=tumbleFae(reelFlip.tr,reelFlip.k);
             log(`${fmtP(p)} flips step ${reelFlip.k} of the <b>${reelFlip.tr}</b> to ${st.c?'Conjured':'Regular'}.`);
-            vv.forEach(q=>log(`The stone flips, and ${fmtP(q)}\u2019s Glamour tumbles!`, 'alert')); syncBoard(); renderHUD();
+            vv.forEach(q=>log(`The stone flips, and ${fmtPs(q)} Glamour tumbles!`, 'alert')); syncBoard(); renderHUD();
           }
           if(amt===2 && reelFerry && reelFerry.src){
             await ferryConjured(p, reelFerry.src.tr, reelFerry.src.k, reelFerry.dest.tr);
@@ -5532,7 +5535,7 @@ async function humanTurn(p){
         st.c=!st.c;
         const vict=tumbleFae(flipPick.tr, flipPick.k);
         log(`${fmtP(p)} flips step ${flipPick.k} of the <b>${flipPick.tr}</b> to ${st.c?'Conjured':'Regular'}.`);
-        vict.forEach(q=>log(`The stone flips, and ${fmtP(q)}\u2019s Glamour tumbles!`, 'alert'));
+        vict.forEach(q=>log(`The stone flips, and ${fmtPs(q)} Glamour tumbles!`, 'alert'));
         syncBoard(); renderHUD();
       }
       if(v===2 && ferry && ferry.src){
@@ -6529,7 +6532,7 @@ async function aiTurn(p){
       const st=G.steps[fp.tr][fp.k-1]; st.c=!st.c;
       const vict=tumbleFae(fp.tr, fp.k);
       log(`${fmtP(p)} flips step ${fp.k} of the <b>${fp.tr}</b> to ${st.c?'Conjured':'Regular'}.`);
-      vict.forEach(q=>log(`The stone flips, and ${fmtP(q)}\u2019s Glamour tumbles!`, 'alert'));
+      vict.forEach(q=>log(`The stone flips, and ${fmtPs(q)} Glamour tumbles!`, 'alert'));
       syncBoard(); renderHUD();
     }
   }
@@ -8959,7 +8962,7 @@ async function midDemoStones(r1, r2){
   // --- THE FLIP ---
   r1.cands[0]={track:'Faerie Bridge', steps:2}; syncBoard();
   await tutSeg([{ target:()=>$('#c3d'), eyebrow:'Watch \u00b7 The Flip', title:'Flipping a stone',
-    body:`${fmtP(r1)}\u2019s Glamour is standing on a conjured stone of the Faerie Bridge. A flip turns any stone to its other side, and anyone standing on it\u2026`,
+    body:`${fmtPs(r1)} Glamour is standing on a conjured stone of the Faerie Bridge. A flip turns any stone to its other side, and anyone standing on it\u2026`,
     nextLabel:'Flip it \u2192' }]);
   const st=G.steps['Faerie Bridge'][1];
   st.c=false; tumbleFae('Faerie Bridge',2); syncBoard();
@@ -8969,11 +8972,11 @@ async function midDemoStones(r1, r2){
   // --- THE FERRY ---
   r2.cands[0]={track:'Faerie Bridge', steps:3}; syncBoard();
   await tutSeg([{ target:()=>$('#c3d'), eyebrow:'Watch \u00b7 The Ferry', title:'Moving a Conjured Stone',
-    body:`Now the gentler trick. ${fmtP(r2)}\u2019s Glamour stands on a conjured stone. A conjured stone can be <b>lifted and carried to the outer end of any dance</b>, and its dancers <b>ride along, unharmed</b>. Watch\u2026`,
+    body:`Now the gentler trick. ${fmtPs(r2)} Glamour stands on a conjured stone. A conjured stone can be <b>lifted and carried to the outer end of any dance</b>, and its dancers <b>ride along, unharmed</b>. Watch\u2026`,
     nextLabel:'Move it \u2192' }]);
   await ferryConjured(G.players[0], 'Faerie Bridge', 3, 'Faerie Ring');
   await tutSeg([{ target:()=>$('#c3d'), side:'left', eyebrow:'Watch \u00b7 The Ferry', title:'Carried to a new beginning',
-    body:`The stone, and ${fmtP(r2)}\u2019s Glamour with it, now sits at the <b>start of the Faerie Ring</b>. No tumble, but all their progress on the old dance is gone: a ferry <b>relocates and resets</b>.<br><br><b>Remember the pair:</b> a <b>flip punishes</b> (a tumble off the dance); a <b>move relocates</b> (a ride to a new dance\u2019s start).` }]);
+    body:`The stone, and ${fmtPs(r2)} Glamour with it, now sits at the <b>start of the Faerie Ring</b>. No tumble, but all their progress on the old dance is gone: a ferry <b>relocates and resets</b>.<br><br><b>Remember the pair:</b> a <b>flip punishes</b> (a tumble off the dance); a <b>move relocates</b> (a ride to a new dance\u2019s start).` }]);
   // restore the pristine board: send the demo dancers home FIRST, then undo the ferry
   r1.cands[0]={track:null,steps:0};
   r2.cands[0]={track:null,steps:0};
@@ -9021,7 +9024,7 @@ async function midDoerRuneOne(me){
   st.c=!st.c;
   const vict=tumbleFae(fp.tr, fp.k);
   log(`${fmtP(me)} flips step ${fp.k} of the <b>${fp.tr}</b> to ${st.c?'Conjured':'Regular'}.`);
-  vict.forEach(q=>log(`The stone flips, and ${fmtP(q)}\u2019s Glamour tumbles!`, 'alert'));
+  vict.forEach(q=>log(`The stone flips, and ${fmtPs(q)} Glamour tumbles!`, 'alert'));
   syncBoard(); renderHUD();
   me.hand.splice(me.hand.indexOf(1),1); me.discard.push(1);
   log(`${fmtP(me)} dances a <b>1</b>.`);
@@ -9054,7 +9057,7 @@ async function demoBrokenCall(r1){
   G.nobles.mountain--; syncBoard();
   banner('THE CALL FADES');
   await tutSeg([{ target:()=>$('#c3d'), eyebrow:'The Capstone', title:'The Call fades',
-    body:`The Mountain drops to <b>${G.nobles.mountain} Wisps</b>, below the ${quorum()} the Call needs: <b>the Call fades away</b>, and ${fmtP(r1)}\u2019s moment is lost.<br><br><b>The lesson cuts both ways</b>: hold a Snuff Out or Wisp-Lure to break a rival\u2019s Call, and never Call at exactly ${quorum()} unless you know the table can\u2019t answer.<br><b>And beware the ceiling</b>: the <b>${coupAt()}th Wisp</b> placed in a Court calls a True Name there <b>at once</b>, whether anyone wishes it or not.` }]);
+    body:`The Mountain drops to <b>${G.nobles.mountain} Wisps</b>, below the ${quorum()} the Call needs: <b>the Call fades away</b>, and ${fmtPs(r1)} moment is lost.<br><br><b>The lesson cuts both ways</b>: hold a Snuff Out or Wisp-Lure to break a rival\u2019s Call, and never Call at exactly ${quorum()} unless you know the table can\u2019t answer.<br><b>And beware the ceiling</b>: the <b>${coupAt()}th Wisp</b> placed in a Court calls a True Name there <b>at once</b>, whether anyone wishes it or not.` }]);
   G.nobles=before; syncBoard();
 }
 
