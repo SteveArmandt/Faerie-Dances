@@ -702,7 +702,7 @@ canvas{display:block;}
   <canvas id="menumist"></canvas>
   <svg id="gladebg" aria-hidden="true"></svg>
   <canvas id="menufireflies"></canvas>
-<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 171 \u00b7 V6.3</div>
+<div id="buildtag" style="position:fixed; right:12px; bottom:8px; z-index:5; font-family:var(--disp); font-size:9px; letter-spacing:.14em; color:rgba(216,180,90,.45);">BUILD 172 \u00b7 V6.3</div>
   <div class="panel">
     <canvas class="cornerflourish" id="cornerfL" width="460" height="460"></canvas>
     <canvas class="cornerflourish flipped" id="cornerfR" width="460" height="460"></canvas>
@@ -1172,6 +1172,12 @@ function effRad(p){ return p.status + ((p.declared && p.patron==='queen') ? 2 : 
 function protectedCourt(h){
   return G && G.players.some(q=>q.declared && q.patron==='prince' && q.house===h);
 }
+function visibleLeader(p){
+  // the tallest visible rival number, if it is genuinely dangerous
+  const top = others(p).reduce((a,b)=>a.status>b.status?a:b, others(p)[0]);
+  return top && top.status>=7 ? top : null;
+}
+function wispTools(p){ return p.intrigues.filter(x=>x==='Snuff Out'||x==='Wisp-Lure').length; }
 function kingBonus(p){ return (p.declared && p.patron==='king') ? 1 : 0; }
 function fmtPatron(p){ return `<b>${PATRON_NAME[p.patron]}</b> of the ${fmtH(p.house)}`; }
 const AI_NAMES = ['Thistle','Bramblewyn','Elderlight','Nightmoth','Fernshade'];
@@ -4107,6 +4113,7 @@ function tumbleFae(tr, k) {
   G.players.forEach(q=>q.cands.forEach(c=>{
     if(c.track===tr && c.steps===k){ c.track=null; c.steps=0; victims.push(q); }
   }));
+  victims.forEach(q=>{ q._stoneBurns=(q._stoneBurns||0)+1; });
   return victims;
 }
 /* Ferry: relocate a conjured stone to the OUTER end of any dance, carrying its
@@ -4133,7 +4140,7 @@ async function ferryConjured(actor, fromTr, k, toTr){
   }));
   // Phase 3: land the riders on the new outer stone.
   G.players.forEach(q=>q.cands.forEach(c=>{
-    if(c._ferry){ c.track=toTr; c.steps=1; delete c._ferry; }
+    if(c._ferry){ c.track=toTr; c.steps=1; delete c._ferry; if(q!==actor) q._stoneBurns=(q._stoneBurns||0)+1; }
   }));
   log(`${fmtP(actor)} moves a Conjured Stone to the outer end of the <b>${toTr}</b>${carried?', carrying its Glamour'+(carried>1?'s':'')+' along':''}.`);
   syncBoard(); renderHUD();
@@ -5095,27 +5102,40 @@ async function callWindow(caller, houseId, need){
   if(!(G.mode && G.mode.reactionWindows)) return;
   const order=[];
   for(let k=1;k<G.players.length;k++) order.push(G.players[(caller.i+k)%G.players.length]);
-  for(const q of order){
-    if(G.over) return;
-    if(G.nobles[houseId] < need) return;   // already broken — no further responses needed
-    if(q.isHuman){
-      await humanReactionPopup(q, 'A True Name is Called!',
-        `${fmtP(caller)} calls for a True Name in the ${fmtH(houseId)} (<b>${G.nobles[houseId]}</b> Wisps; the Call needs <b>${need}</b>). You may respond before the reveal.`, 'call');
-    } else {
-      // AI responds if it expects to LOSE this Call (its own win probability
-      // in the called Court is low) and one Wisp suffices to break it.
-      const losing = pWinCall(q, houseId) < 0.4;
-      if(losing && G.nobles[houseId]===need){   // one Wisp is enough to break it
-        if(q.intrigues.includes('Snuff Out') && Math.random()<.85){
-          q._from=houseId;
-          await playActiveIntrigue(q,'Snuff Out');
-        } else if(q.intrigues.includes('Wisp-Lure') && Math.random()<.7 && !protectedCourt(houseId)){
-          q._from=houseId;
-          q._to = (q.house!==houseId && G.nobles[q.house]+1<coupAt() && !knownStrongerShares(q)) ? q.house
-                  : pick(HOUSES.filter(h=>h.id!==houseId)).id;
-          await playActiveIntrigue(q,'Wisp-Lure');
+  /* The window stays open until every rival passes in a full round (the
+     printed rule): the table may gang up on a fat Court, one card each. */
+  const handTotal=()=>G.players.reduce((a,x)=>a+x.intrigues.length,0);
+  let prevRoundPlayed=true;
+  for(let round=0; round<8 && prevRoundPlayed; round++){
+    prevRoundPlayed=false;
+    for(const q of order){
+      if(G.over) return;
+      if(G.nobles[houseId] < need) return;   // broken — no further responses needed
+      const before=handTotal();
+      if(q.isHuman){
+        await humanReactionPopup(q, 'A True Name is Called!',
+          `${fmtP(caller)} calls for a True Name in the ${fmtH(houseId)} (<b>${G.nobles[houseId]}</b> Wisps; the Call needs <b>${need}</b>). You may respond before the reveal.`, 'call');
+      } else {
+        /* Contribute a card whenever the TABLE can plausibly break the Call:
+           my own wisp-tools plus a public-hand-size estimate of my fellow
+           losers' tools, measured against the margin. */
+        const losing = pWinCall(q, houseId) < 0.45;
+        const margin = G.nobles[houseId]-need+1;
+        const allyCards = order.filter(o=>o!==q && !o.isHuman).reduce((a,o)=>a+o.intrigues.length,0);
+        const reach = wispTools(q) + Math.min(2, Math.floor(allyCards/2));
+        if(losing && margin<=reach){
+          if(q.intrigues.includes('Snuff Out') && Math.random()<.9){
+            q._from=houseId;
+            await playActiveIntrigue(q,'Snuff Out');
+          } else if(q.intrigues.includes('Wisp-Lure') && Math.random()<.8 && !protectedCourt(houseId)){
+            q._from=houseId;
+            q._to = (q.house!==houseId && G.nobles[q.house]+1<coupAt() && !knownStrongerShares(q)) ? q.house
+                    : pick(HOUSES.filter(h=>h.id!==houseId)).id;
+            await playActiveIntrigue(q,'Wisp-Lure');
+          }
         }
       }
+      if(handTotal()<before) prevRoundPlayed=true;
     }
   }
 }
@@ -5658,6 +5678,18 @@ function wantsWin(p){ return pWinCall(p, p.house) >= 0.45; }
 
 /* Which dance's FAVOR do I most need right now? */
 function preferredTrack(p){
+  /* DEFENSE FIRST: a rival Court within one Wisp of a Call, held by someone
+     who outshines me, makes the Fort's two-Wisp snuff the best dance there is. */
+  {
+    const myGuess=p.knownStatus!=null?p.knownStatus:selfStatusMean(p);
+    const danger=HOUSES.some(h=>{
+      if(h.id===p.house) return false;
+      if(G.nobles[h.id]<quorum()-1) return false;
+      return rivalThreatIn(p,h.id)>myGuess+0.5;
+    });
+    if(danger && pWinCall(p,p.house)<0.45 && TRACKS.includes('Faerie Fort') && Math.random()<0.75)
+      return 'Faerie Fort';
+  }
   /* The opening depends on how many Fae are dancing. At a large table the
      visible leader is hunted by everyone, so trade toward the second best
      instead; at four, build the Magik engine. (A three-handed scouting
@@ -5954,7 +5986,7 @@ async function aiKingdomAction(p, track){
        tallest number draws every Ring swap and every forced redraw, so the
        quieter hand is usually worth more than the louder one. */
     if(target && second && second!==top && second.status>mine+0.5 &&
-       top.status-second.status<=1 && Math.random()<0.6) target=second;
+       top.status<8 && top.status-second.status<=1 && Math.random()<0.6) target=second;
     if(target){ p._target=target; return ACTIONS.swapStatus(p); }
     // No trade worth making. Look only at a genuinely jumbled field, where the
     // number actually changes a decision; never when I already know it.
@@ -5990,9 +6022,11 @@ async function aiKingdomAction(p, track){
          emergency at any standing. */
       const behind = myGuess < maxVisible(p) - 1.5;
       const lean = behind ? 1.15 : 0.75;
-      const v = (n>=quorum()? (26+threat*1.3)*(1+heat*0.5)
+      let v = (n>=quorum()? (26+threat*1.3)*(1+heat*0.5)
                : n===quorum()-1? (14+threat*0.9)*(1+heat*0.5)*lean
                : threat*0.35*lean);
+      const lead=visibleLeader(p);
+      if(lead && pInCourt(p,lead,h.id)>=0.5) v*=1.35;   // the leader's Court is the one to starve
       if(v>snuffVal){ snuffVal=v; snuffTarget=h.id; }
     });
     if(feedVal>snuffVal && canFeed){
@@ -6144,9 +6178,16 @@ const PENDING_CALLS=[];       // Calls triggered mid-Call wait here, in order
 async function aiNobleReaction(q, houseId){
   if(G.over || houseId===q.house) return;
   const n=G.nobles[houseId];
-  if(n<quorum()) return;                        // not armed yet: keep holding
+  if(n<quorum()-1) return;                      // far from a Call: keep holding
+  if(n===quorum()-1){
+    /* One short of a Call: act early ONLY against a Court whose believed
+       owner is the table's visible radiance leader — the exact line that
+       runs away with the game if left alone. */
+    const lead=visibleLeader(q);
+    if(!lead || pInCourt(q, lead, houseId)<0.5 || Math.random()<0.35) return;
+  }
   const urgent = n>=coupAt()-1;                 // next Wisp forces the Call
-  if(!urgent && Math.random()<0.4) return;      // at mere quorum: sometimes hold one beat more
+  if(!urgent && n>=quorum() && Math.random()<0.4) return; // at mere quorum: sometimes hold one beat more
   if(q.intrigues.includes('Snuff Out')){
     q._from=houseId;
     await playActiveIntrigue(q,'Snuff Out');
@@ -6194,7 +6235,7 @@ async function aiPostMagik(p){
       const reach = armedHand ? 5 : 0;
       if(n===coupAt()-1){ if(24+reach>danger){ danger=24+reach; target=h.id; } }
       else if(n>=quorum()){ const t=rivalThreatIn(p,h.id); if(14+t+reach>danger){ danger=14+t+reach; target=h.id; } }
-      else if(n===quorum()-1){ const t=rivalThreatIn(p,h.id); if(6+t*0.5+reach>danger){ danger=6+t*0.5+reach; target=h.id; } }
+      else if(n===quorum()-1 && wispTools(p)>=2){ const t=rivalThreatIn(p,h.id); if(6+t*0.5+reach>danger){ danger=6+t*0.5+reach; target=h.id; } }
     });
     if(target && p.intrigues.includes('Snuff Out')){
       p._from=target; await playActiveIntrigue(p,'Snuff Out'); continue;
@@ -6392,9 +6433,14 @@ async function aiTurn(p){
             if(iLose) defuse=o;
           });
         });
-        if(defuse && Math.random()<0.75){ t=defuse; which='radiance'; }
+        if(defuse && Math.random()<0.75){
+          t=defuse;
+          /* Against the visible leader, tearing the COURT is the sharper cut:
+             the 9 survives but the armed Court is no longer theirs. */
+          which = (visibleLeader(p)===defuse && Math.random()<0.5) ? 'court' : 'radiance';
+        }
         else if(top.status>=7 && top.status>m &&
-                Math.random() < (HOUSES.some(h=>G.nobles[h.id]>=quorum()-1 && pInCourt(p,top,h.id)>=0.45) ? 0.8 : 0.55)){
+                Math.random() < (HOUSES.some(h=>G.nobles[h.id]>=quorum()-1 && pInCourt(p,top,h.id)>=0.45) ? 0.92 : 0.7)){
           /* Always the Radiance against a tall number: it strips the card that
              makes them dangerous AND leaves them blind to what replaced it, so
              they hesitate to Call. Tearing up a Court is the riskier tool — the
@@ -6421,6 +6467,26 @@ async function aiTurn(p){
   }
   if(G.over || ep!==EPOCH) return;
  
+  /* THE SPRINT CADENCE: a full-length rune completes a dance straight from
+     the reserve, and a Glamour that never stands overnight can never be
+     flipped or ferried. With both Glamours in reserve and no rune in hand
+     reaching a completion, reclaiming the spent runes beats parking a dancer
+     on stones a rival will move. (6 — sit out — 6, as the Fae play it.) */
+  if(G.mode && G.mode.runePowers && p.discard.length && p.cands.every(c=>!c.track)){
+    const bonus = kingBonus(p) + (p.intrigues.includes('Bountiful Harvest')?3:0);
+    const reach = (p.hand.length?Math.max(...p.hand):0) + bonus;
+    const shortest = Math.min(...TRACKS.map(trackLen));
+    const recoveredReach = Math.max(...p.hand.concat(p.discard)) + bonus;
+    /* Parking is only dangerous while rivals still hold their 1s and 2s —
+       the mandatory flip and ferry. Spent hands cannot move stones. */
+    const stoneThreat = others(p).filter(o=>o.hand.includes(1)||o.hand.includes(2)).length;
+    const calm = boardHeat(p)<0.35 && !HOUSES.some(h=>G.nobles[h.id]>=quorum()-1);
+    if(!(window.SPRINT_OFF && window.SPRINT_OFF.has(p.i)) && calm && (p._stoneBurns||0)>=3 && reach < shortest && recoveredReach >= shortest && stoneThreat>=1 && Math.random()<0.8){
+      p.hand.push(...p.discard.splice(0)); p.hand.sort((a,b)=>a-b);
+      log(`${fmtP(p)} sits out the dance and reclaims their discards.`);
+      renderHUD(); await aiPostMagik(p); await wait(500); return;
+    }
+  }
   const need=minCompletion(p);
   let pts=null, playedCard=null;
   if(!p.hand.some(v=>v>=need) && need<=6 && p.intrigues.includes('Midsummer Reel')){
@@ -6435,6 +6501,10 @@ async function aiTurn(p){
     }
   } else {
     let card = p.hand.filter(v=>v>=need).sort((a,b)=>a-b)[0];
+    if(card===5 && visibleLeader(p)){
+      const alt=p.hand.filter(v=>v>=need && v!==5).sort((a,b)=>a-b)[0];
+      if(alt) card=alt;               // hold the 5: the leader's number must be torn
+    }
     if(!card) card = need>4 && p.hand.includes(1) ? 1 : Math.max(...p.hand);
     if(p.intrigues.includes('Bountiful Harvest') && !p.hand.some(v=>v>=need) && Math.max(...p.hand)+3>=need && Math.random()<.7){
       await playActiveIntrigue(p,'Bountiful Harvest');
