@@ -4475,8 +4475,6 @@ async function trackComplete(owner, actor, cand){
   const plagued=await plagueWindow(actor);
   if(plagued){
     log(`The <b>Blight</b> withers the dance; no Wisp is unveiled.`, 'alert');
-    if(actor.isHuman) await seatNotice(actor, 'The Blight stands',
-      `Your completed dance withers: <b>no Wisp is unveiled</b>. The rest of the completion continues as normal.`);
   } else {
     const h=await pickHouseForNoble(actor);
     await placeNoble(h, actor);
