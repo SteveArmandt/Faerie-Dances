@@ -5589,10 +5589,12 @@ function courtBeliefs(p, o){
   /* Human-calibrated evidence curve: players often bluff their first wisp or
      two, but three or more into one Court is too expensive to fake. So the
      1st placement is weak evidence, the 2nd moderate, the 3rd+ near-decisive. */
-  const EV_CURVE=[0, 0.5, 1.6, 7.0];
+  /* v6.3 read: a 1st Wisp is a lean (~38%), a 2nd is very likely their
+     Court (~67%), a 3rd all but guarantees it (~92%). */
+  const EV_CURVE=[0, 0.8, 5.0, 30.0];
   const evidence=e=>{                       // weights are fractional now: interpolate
     if(e<=0) return 0;
-    if(e>=3) return EV_CURVE[3] + 3.0*(e-3);
+    if(e>=3) return EV_CURVE[3] + 8.0*(e-3);
     const i=Math.floor(e);
     return EV_CURVE[i] + (EV_CURVE[i+1]-EV_CURVE[i])*(e-i);
   };
